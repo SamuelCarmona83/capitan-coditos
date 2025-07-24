@@ -3,7 +3,6 @@ from discord import app_commands
 import requests
 import asyncio
 import os
-from riotwatcher import LolWatcher
 from openai import AsyncOpenAI
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
@@ -15,29 +14,7 @@ intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-lol_watcher = LolWatcher(RIOT_API_KEY)
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-
-
-def get_summoner_data(summoner_name):
-    url = f"https://{REGION}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{summoner_name}"
-    headers = {"X-Riot-Token": RIOT_API_KEY}
-    r = requests.get(url, headers=headers)
-    return r.json()
-
-
-def get_match_history(puuid):
-    url = f"https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?start=0&count=1"
-    headers = {"X-Riot-Token": RIOT_API_KEY}
-    r = requests.get(url, headers=headers)
-    return r.json()
-
-
-def get_match_data(match_id):
-    url = f"https://americas.api.riotgames.com/lol/match/v5/matches/{match_id}"
-    headers = {"X-Riot-Token": RIOT_API_KEY}
-    r = requests.get(url, headers=headers)
-    return r.json()
 
 
 async def generar_mensaje_openai(nombre, stats):
@@ -57,8 +34,8 @@ async def generar_mensaje_openai(nombre, stats):
     response = await openai_client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "Eres un jugador de LoL con humor ácido y opiniones fuertes."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": "Eres un jugador de LoL con humor ácido, opiniones fuertes y objetividad si el desempeño fue bueno."},
+            {"role": "user", "content": prompt + "\n\nSi el jugador realizó una buena actuación, evalúa objetivamente su desempeño."}
         ],
         temperature=0.8
     )
@@ -139,6 +116,43 @@ def encontrar_peor_jugador(participants):
     return peor_nombre, peor_partida, scores[peor_nombre]
 
 
+# Fetch summoner data by name
+def get_summoner_data(game_name, tag_line):
+
+
+    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 404:
+        raise ValueError("Summoner not found.")
+    elif response.status_code == 429:
+        raise ValueError("Rate limit exceeded. Please try again later.")
+    response.raise_for_status()
+    return response.json()
+
+
+# Fetch match history by PUUID
+def get_match_history(puuid):
+    url = f"https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?start=0&count=1"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 429:
+        raise ValueError("Rate limit exceeded. Please try again later.")
+    response.raise_for_status()
+    return response.json()
+
+
+# Fetch match data by match ID
+def get_match_data(match_id):
+    url = f"https://americas.api.riotgames.com/lol/match/v5/matches/{match_id}"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 429:
+        raise ValueError("Rate limit exceeded. Please try again later.")
+    response.raise_for_status()
+    return response.json()
+
+
 @app_commands.describe(invocador="Tu nombre de invocador (ej: Roga#LAN)")
 @tree.command(name="analizarpartida", description="Analiza tu última partida y encuentra al peor jugador con un resumen divertido.")
 async def analizar_partida(interaction: discord.Interaction, invocador: str):
@@ -146,23 +160,32 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
 
     try:
         if "#" in invocador:
-            invocador = invocador.split("#")[0]
+            game_name, tag_line = invocador.split("#")
 
-        summoner = lol_watcher.summoner.by_name(REGION, invocador)
+        # Fetch summoner data
+        summoner = get_summoner_data(game_name, tag_line)
         puuid = summoner['puuid']
 
-        matches = lol_watcher.match.matchlist_by_puuid("americas", puuid, count=1)
+        # Fetch match history
+        matches = get_match_history(puuid)
         if not matches:
             await interaction.followup.send("⚠️ No se encontraron partidas recientes.")
-            return
-
-        match_data = lol_watcher.match.by_id("americas", matches[0])
+            return        # Fetch match data
+        match_data = get_match_data(matches[0])
         participants = match_data['info']['participants']
+        game_duration = match_data['info']['gameDuration'] // 60  # Convert to minutes
 
-        peor_nombre, peor_stats, _ = encontrar_peor_jugador(participants)
+        # Find the player's team
+        player = next(p for p in participants if p['puuid'] == puuid)
+        player_team = player['teamId']
+
+        # Get allies (same team as the player)
+        aliados = [p for p in participants if p['teamId'] == player_team]
+        
+        # Analyze the worst player from the ally team only
+        peor_nombre, peor_stats, _ = encontrar_peor_jugador(aliados)
+        peor_stats['gameDuration'] = game_duration  # Add game duration to stats
         mensaje = await generar_mensaje_openai(peor_nombre, peor_stats)
-
-        aliados = [p for p in participants if p['teamId'] == peor_stats['teamId']]
         resumen_equipo = "\n".join([
             f"**{p['summonerName']}** - {p['championName']} - {p['kills']}/{p['deaths']}/{p['assists']}"
             for p in aliados
@@ -170,6 +193,8 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
 
         await interaction.followup.send(f"**Resumen del equipo de {invocador}:**\n{resumen_equipo}\n\n{mensaje}")
 
+    except ValueError as e:
+        await interaction.followup.send(f"⚠️ {str(e)}")
     except Exception as e:
         await interaction.followup.send(f"❌ Ocurrió un error: {str(e)}")
 
@@ -178,6 +203,12 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
 async def on_ready():
     await tree.sync()
     print(f"✅ Bot conectado como {client.user}")
+
+    cmds = await tree.fetch_commands()
+    print("🔍 Comandos registrados:")
+    for cmd in cmds:
+        print(f"- {cmd.name}")
+    print("\n🌐 Comandos sincronizados correctamente.")
 
 
 client.run(DISCORD_TOKEN)
