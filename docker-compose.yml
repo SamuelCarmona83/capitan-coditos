@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  discbot:
+    build: .
+    environment:
+      - DISCORD_TOKEN=<YOUR_DISCORD_TOKEN>
+      - RIOT_API_KEY=<YOUR_RIOT_API_KEY>
+    volumes:
+      - .:/app
+    ports:
+      - "8080:80"
+    restart: always
