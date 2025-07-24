@@ -185,13 +185,25 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         # Analyze the worst player from the ally team only
         peor_nombre, peor_stats, _ = encontrar_peor_jugador(aliados)
         peor_stats['gameDuration'] = game_duration  # Add game duration to stats
-        mensaje = await generar_mensaje_openai(peor_nombre, peor_stats)
+        mensaje = await generar_mensaje_openai(peor_nombre, peor_stats)        # Format team stats with emojis and better spacing
         resumen_equipo = "\n".join([
-            f"**{p['summonerName']}** - {p['championName']} - {p['kills']}/{p['deaths']}/{p['assists']}"
+            f"👤 **{p['summonerName']}** | 🦸 {p['championName']} | ⚔️ `{p['kills']}/{p['deaths']}/{p['assists']}`"
             for p in aliados
         ])
 
-        await interaction.followup.send(f"**Resumen del equipo de {invocador}:**\n{resumen_equipo}\n\n{mensaje}")
+        resultado = "Victoria" if player["win"] else "Derrota"
+        emoji_resultado = "🏆" if player["win"] else "💔"
+
+        mensaje_formateado = (
+            f"{emoji_resultado} **Resumen de la partida ({resultado})** {emoji_resultado}\n"
+            f"⏱️ Duración: {game_duration} minutos\n"
+            f"\n🎮 **Equipo de {invocador}**\n"
+            f"{resumen_equipo}\n"
+            f"\n🎯 **Análisis**\n"
+            f"{mensaje}"
+        )
+
+        await interaction.followup.send(mensaje_formateado)
 
     except ValueError as e:
         await interaction.followup.send(f"⚠️ {str(e)}")
