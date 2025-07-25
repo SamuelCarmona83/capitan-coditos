@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from riot.api import get_player_match_data
-from utils.helpers import encontrar_peor_jugador, create_stats_dict, get_player_name, format_kda, get_match_result_info, handle_command_error
+from utils.helpers import encontrar_peor_jugador, create_stats_dict, get_player_name, format_kda, get_match_result_info, handle_command_error, get_champion_icon_url
 from ai.openai_service import generar_mensaje_openai
 
 async def analizar_partida(interaction: discord.Interaction, invocador: str):
@@ -14,11 +14,11 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         # Get allies (same team as the player)
         player_team = participant['teamId']
         aliados = [p for p in participants if p['teamId'] == player_team]
-        
-        # Analyze the worst player from the ally team
+          # Analyze the worst player from the ally team
         peor_nombre, peor_stats, _ = encontrar_peor_jugador(aliados)
+        game_mode = match_data["info"].get("gameMode", "Desconocido")
         stats = create_stats_dict(peor_stats, game_duration)
-        mensaje = await generar_mensaje_openai(peor_nombre, stats)
+        mensaje = await generar_mensaje_openai(peor_nombre, stats, peor_stats, game_mode)
         
         # Format team stats
         resumen_equipo = "\n".join([
