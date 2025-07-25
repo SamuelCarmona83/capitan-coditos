@@ -20,15 +20,21 @@ openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 async def generar_mensaje_openai(nombre, stats):
     prompt = f"""
     Actúa como un entrenador de League of Legends brutalmente honesto y sarcástico.
-    Tienes acceso a las estadísticas de una partida reciente. Identifica al jugador con el peor desempeño.
-    Diles veganos. que pasaron tiempo en pantalla gris. o que deberían haber jugado al Candy Crush.
-    Estadísticas:
-    - Jugador: {nombre}
-    - KDA: {stats['kills']}/{stats['deaths']}/{stats['assists']}
-    - Daño: {stats['totalDamageDealtToChampions']}
-    - Tiempo: {stats['gameDuration']} minutos
+    Genera un mensaje corto y directo usando el formato de texto de Discord:
+    - Usa **negrita** para énfasis
+    - Usa *cursiva* para términos de juego
+    - Usa __subrayado__ para nombres
+    - Usa ~~tachado~~ para errores o fallos
+    - Usa `código` para números o estadísticas
+    
+    Estadísticas del jugador:
+    Invocador: __**{nombre}**__
+    KDA: `{stats['kills']}/{stats['deaths']}/{stats['assists']}`
+    Daño: `{stats['totalDamageDealtToChampions']:,}`
+    Tiempo: `{stats['gameDuration']} min`
 
-    Escribe un mensaje breve (máximo 2 oraciones) con humor negro gamer.
+    Escribe un mensaje breve (máximo 2 oraciones) con humor negro gamer, mencionando específicamente sus estadísticas.
+    Usa memes de gaming, referencias a otros juegos más fáciles (Candy Crush, Minecraft, etc), o tiempo en pantalla gris.
     """
 
     response = await openai_client.chat.completions.create(
@@ -110,9 +116,19 @@ def encontrar_peor_jugador(participants):
         damage = p["totalDamageDealtToChampions"]
         return (k + a) / max(1, d) + (damage / 10000)
 
-    scores = {p["summonerName"]: calcular_score(p) for p in participants}
+    scores = {}
+    for p in participants:
+        # Try different name fields - riotIdGameName is more reliable
+        name = p.get('riotIdGameName') or p.get('summonerName') or f"Player_{p.get('participantId', 'Unknown')}"
+        if name:
+            scores[name] = calcular_score(p)
+    
+    if not scores:  # If no valid players found
+        return "Unknown", participants[0], 0
+        
     peor_nombre = min(scores, key=scores.get)
-    peor_partida = next(p for p in participants if p["summonerName"] == peor_nombre)
+    peor_partida = next(p for p in participants if 
+                       (p.get('riotIdGameName') or p.get('summonerName') or f"Player_{p.get('participantId', 'Unknown')}") == peor_nombre)
     return peor_nombre, peor_partida, scores[peor_nombre]
 
 
@@ -173,34 +189,40 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
             return        # Fetch match data
         match_data = get_match_data(matches[0])
         participants = match_data['info']['participants']
-        game_duration = match_data['info']['gameDuration'] // 60  # Convert to minutes
-
-        # Find the player's team
+        game_duration = match_data['info']['gameDuration'] // 60  # Convert to minutes        # Find the player's team
         player = next(p for p in participants if p['puuid'] == puuid)
         player_team = player['teamId']
-
+        
         # Get allies (same team as the player)
         aliados = [p for p in participants if p['teamId'] == player_team]
+        
+        # Debug: Print summoner names to see what's available
+        print("DEBUG - Player summoner names:")
+        for p in aliados:
+            print(f"  summonerName: '{p.get('summonerName', 'NOT_FOUND')}'")
+            print(f"  riotIdGameName: '{p.get('riotIdGameName', 'NOT_FOUND')}'")
+            print(f"  riotIdTagline: '{p.get('riotIdTagline', 'NOT_FOUND')}'")
         
         # Analyze the worst player from the ally team only
         peor_nombre, peor_stats, _ = encontrar_peor_jugador(aliados)
         peor_stats['gameDuration'] = game_duration  # Add game duration to stats
-        mensaje = await generar_mensaje_openai(peor_nombre, peor_stats)        # Format team stats with emojis and better spacing
+        mensaje = await generar_mensaje_openai(peor_nombre, peor_stats)        
+        
+        # Format team stats with consistent styling - use riotIdGameName if summonerName is empty
         resumen_equipo = "\n".join([
-            f"👤 **{p['summonerName']}** | 🦸 {p['championName']} | ⚔️ `{p['kills']}/{p['deaths']}/{p['assists']}`"
+            f"• **{p.get('riotIdGameName', p.get('summonerName', 'Unknown'))}** - {p['championName']} (`{p['kills']}/{p['deaths']}/{p['assists']}`)"
             for p in aliados
         ])
 
         resultado = "Victoria" if player["win"] else "Derrota"
         emoji_resultado = "🏆" if player["win"] else "💔"
 
+        # Create formatted message
         mensaje_formateado = (
-            f"{emoji_resultado} **Resumen de la partida ({resultado})** {emoji_resultado}\n"
-            f"⏱️ Duración: {game_duration} minutos\n"
-            f"\n🎮 **Equipo de {invocador}**\n"
+            f"{emoji_resultado} **{resultado}** - ⏱️ {game_duration} min\n"
+            f"**Equipo de {invocador}:**\n"
             f"{resumen_equipo}\n"
-            f"\n🎯 **Análisis**\n"
-            f"{mensaje}"
+            f"\n{mensaje}"
         )
 
         await interaction.followup.send(mensaje_formateado)
