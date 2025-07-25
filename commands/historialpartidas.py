@@ -38,13 +38,12 @@ class MatchHistoryView(discord.ui.View):
                 
                 # Generate AI analysis for this specific match
                 mensaje_openai = await generar_mensaje_openai(game_name, stats, participant, game_mode)
-                
-                # Create detailed embed for this match
+                  # Create detailed embed for this match
                 embed = await create_match_detail_embed(
                     self.riot_id, participant, match_data, game_duration, mensaje_openai, match_index + 1
                 )
                 
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed)
                 
             except Exception as e:
                 await handle_command_error(interaction, e)
