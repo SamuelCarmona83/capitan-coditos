@@ -1,20 +1,40 @@
 # Use an official Python runtime as a parent image
-FROM python:3.9-slim
+FROM python:3.11-slim
+
+# Set metadata
+LABEL maintainer="samuelc595"
+LABEL description="Capitán Coditos - Discord League of Legends Bot with AI Commentary"
+LABEL version="1.0"
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Create a non-root user for security
+RUN groupadd -r botuser && useradd -r -g botuser botuser
+
+# Copy requirements first for better caching
+COPY requirements.txt .
 
 # Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Make port 80 available to the world outside this container
-EXPOSE 80
+# Copy the bot code
+COPY bot.py .
 
-# Define environment variable
+# Change ownership of the app directory to botuser
+RUN chown -R botuser:botuser /app
+
+# Switch to non-root user
+USER botuser
+
+# Define environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-# Run main.py when the container launches
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "print('Bot is healthy')" || exit 1
+
+# Run bot.py when the container launches
 CMD ["python", "bot.py"]
