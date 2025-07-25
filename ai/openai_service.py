@@ -41,6 +41,8 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
     Daño: `{stats['totalDamageDealtToChampions']:,}`
     Tiempo: `{stats['gameDuration']} min`
     {farm_analysis}
+    nota: el farmeo es importante, pero solo en modo CLASSIC o Grieta del invocador.
+    
     Modo de juego: `{game_mode}`
 
     IMPORTANTE - Considera el rol del jugador:
@@ -50,7 +52,7 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
 
     Ten en cuenta estos otros detalles del jugador:
     - Campeón: `{participant.get('championName', 'N/A')}` (si está disponible)
-    - Visión: `{stats.get('visionScore', 'N/A')}` (para supports debería ser alto)
+    - Visión: `{stats.get('visionScore', 'N/A')}` (para supports debería ser alto, solo importante en CLASSIC o grieta del invocador)
     - Oro: `{stats.get('goldEarned', 'N/A')}` si es bajo dile "pelabolas"
     - Nivel: `{stats.get('champLevel', 'N/A')}`
     - Pentakills: `{participant.get('pentaKills', 'N/A')}` (si está disponible)
