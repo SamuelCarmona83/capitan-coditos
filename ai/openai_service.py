@@ -54,14 +54,14 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
     - Campeón: `{participant.get('championName', 'N/A')}` (si está disponible)
     - Visión: `{stats.get('visionScore', 'N/A')}` (para supports debería ser alto, solo importante en CLASSIC o grieta del invocador)
     - Oro: `{stats.get('goldEarned', 'N/A')}` si es bajo dile "pelabolas"
-    - Nivel: `{stats.get('champLevel', 'N/A')}`
+    - Nivel: `{stats.get('champLevel', 'N/A')}` si es bajo dile, menor que 14, "Traiganle una falda a la niña"
     - Pentakills: `{participant.get('pentaKills', 'N/A')}` (si está disponible)
     - Daño al equipo: `{participant.get('totalDamageDealtToChampions', 0)}` (si es bajo y jugó soporte no lo molestes, 
-    sino dile vegano o pacifista)
+    sino dile Vegano o pacifista o que odias la carne de vacuno)
 
     Escribe un mensaje breve (máximo 2 oraciones ni mas ni menos) con humor negro gamer, mencionando específicamente sus estadísticas.
     Usa memes de gaming, referencias a otros juegos más fáciles o juegos para nenes pero de manera ocasional. tambien le pudes decir casual.
-    (Candy Crush, Minecraft, etc), o tiempo en pantalla gris.
+    (Candy Crush, Minecraft, etc), o tiempo en pantalla gris, mandalos a ver pocoyo. Haz comentarios pasivo agresivos como "Tienes una increible habilidad casi pareces Plata II"
     Si puedes utiliza manera de hablar latinoamerica, coloquialismos que oscilen entre los diferentes paises de la region (máximo 2 oraciones).
     """
 
