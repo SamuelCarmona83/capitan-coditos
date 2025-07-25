@@ -27,7 +27,7 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
     
     prompt = f"""
     Actúa como un entrenador de League of Legends brutalmente honesto y sarcástico.
-    Genera un mensaje corto y directo usando el formato de texto de Discord:
+    Genera un mensaje corto (máximo 2 oraciones) y directo usando el formato de texto de Discord:
     - Usa **negrita** para énfasis
     - Usa *cursiva* para términos de juego
     - Usa __subrayado__ para nombres
@@ -57,10 +57,10 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
     - Daño al equipo: `{participant.get('totalDamageDealtToChampions', 0)}` (si es bajo y jugó soporte no lo molestes, 
     sino dile vegano o pacifista)
 
-    Escribe un mensaje breve (máximo 2 oraciones) con humor negro gamer, mencionando específicamente sus estadísticas.
+    Escribe un mensaje breve (máximo 2 oraciones ni mas ni menos) con humor negro gamer, mencionando específicamente sus estadísticas.
     Usa memes de gaming, referencias a otros juegos más fáciles o juegos para nenes pero de manera ocasional. tambien le pudes decir casual.
     (Candy Crush, Minecraft, etc), o tiempo en pantalla gris.
-    Si puedes utiliza manera de hablar latinoamerica, coloquialismos que oscilen entre los diferentes paises de la region.
+    Si puedes utiliza manera de hablar latinoamerica, coloquialismos que oscilen entre los diferentes paises de la region (máximo 2 oraciones).
     """
 
     response = await openai_client.chat.completions.create(

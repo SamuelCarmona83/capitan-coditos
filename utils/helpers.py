@@ -295,12 +295,15 @@ async def create_match_analysis_embed(riot_id: str, participant, match_data, gam
         description=f"🎯 KDA: {kda} | 🕹️ {resultado} | 🕒 {game_duration} minutos",
         color=0x00ff00 if resultado == "Victoria" else 0xff0000
     )
-    
     embed.add_field(
         name=f"Campeón: {champ}",
         value=f"Modo de juego: {game_mode_name}",
         inline=False
     )
+    
+    # Truncate analysis message if too long
+    if len(analysis_message) > 1020:  # Leave margin for formatting
+        analysis_message = analysis_message[:1017] + "..."
     
     embed.add_field(
         name="Análisis de la partida:",

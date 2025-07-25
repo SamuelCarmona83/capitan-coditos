@@ -9,16 +9,16 @@ def get_player_riot_id(participant):
     tag_line = participant.get('riotIdTagline')  # Fixed: was 'riotIdTagLine'
     
     # Debug logging
-    print(f"Debug: game_name='{game_name}', tag_line='{tag_line}'")
+    #print(f"Debug: game_name='{game_name}', tag_line='{tag_line}'")
     
     if game_name and tag_line:
         riot_id = f"{game_name}#{tag_line}"
-        print(f"Debug: Created Riot ID: {riot_id}")
+        #print(f"Debug: Created Riot ID: {riot_id}")
         return riot_id
     
     # If we don't have both parts, we can't create a valid Riot ID
     # Return None so the button gets disabled
-    print(f"Debug: Cannot create Riot ID, missing data")
+    #print(f"Debug: Cannot create Riot ID, missing data")
     return None
 
 async def show_player_ultima_partida(interaction: discord.Interaction, riot_id: str):
@@ -102,14 +102,25 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
             "CHERRY": "Arena de Noxus"
         }
         game_mode_name = custom_game_modes.get(game_mode, game_mode)
-        
-        # Format team stats for embed
+          # Format team stats for embed (truncate if too long)
         resumen_equipo = "\n".join([
             f"• **{get_player_name(p)}** - {p['championName']} (`{format_kda(p)}`)"
             for p in aliados
         ])
-
-        # Create Discord embed
+        
+        # Check if team summary is too long for Discord (max 1024 chars)
+        if len(resumen_equipo) > 1000:  # Leave some margin
+            # Split into two parts if too long TODO: check bl later
+            team_lines = [
+                f"• **{get_player_name(p)}** - {p['championName']} (`{format_kda(p)}`)"
+                for p in aliados
+            ]
+            mid_point = len(team_lines) // 2
+            resumen_equipo_1 = "\n".join(team_lines[:mid_point])
+            resumen_equipo_2 = "\n".join(team_lines[mid_point:])
+            split_team = True
+        else:
+            split_team = False        # Create Discord embed
         embed = discord.Embed(
             title=f"Análisis de partida de {invocador}",
             description=f"🕒 {game_duration} minutos | 🕹️ {resultado}",
@@ -122,11 +133,28 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
             inline=False
         )
         
-        embed.add_field(
-            name="Equipo:",
-            value=resumen_equipo,
-            inline=False
-        )
+        # Add team field(s) - split if too long
+        if split_team:
+            embed.add_field(
+                name="Equipo (Parte 1):",
+                value=resumen_equipo_1,
+                inline=False
+            )
+            embed.add_field(
+                name="Equipo (Parte 2):",
+                value=resumen_equipo_2,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="Equipo:",
+                value=resumen_equipo,
+                inline=False
+            )
+        
+        # Truncate analysis message if too long
+        if len(mensaje) > 1020:  # Leave margin for formatting
+            mensaje = mensaje[:1017] + "..."
         
         embed.add_field(
             name="Análisis del mas mocho:",
