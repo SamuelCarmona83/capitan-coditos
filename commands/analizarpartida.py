@@ -1,7 +1,6 @@
 import discord
 from discord import app_commands
-from riot.api import get_player_match_data
-from utils.helpers import encontrar_peor_jugador, create_stats_dict, get_player_name, format_kda, get_match_result_info, handle_command_error, get_champion_icon_url, parse_riot_id
+from utils.helpers import encontrar_peor_jugador, create_stats_dict, get_player_name, format_kda, get_match_result_info, handle_command_error, get_champion_icon_url, get_match_analysis_data, create_ultima_partida_embed
 from ai.openai_service import generar_mensaje_openai
 
 def get_player_riot_id(participant):
@@ -23,55 +22,11 @@ def get_player_riot_id(participant):
     return None
 
 async def show_player_ultima_partida(interaction: discord.Interaction, riot_id: str):
-    """Helper function to show a player's last match - similar to ultimapartida command"""
+    """Helper function to show a player's last match - simplified using shared functions"""
     await interaction.response.defer()
 
     try:
-        participant, match_data, game_duration = await get_player_match_data(riot_id)
-        game_name = parse_riot_id(riot_id)[0]
-        
-        champ = participant["championName"]
-        kda = format_kda(participant)
-        resultado, _ = get_match_result_info(participant)
-        game_mode = match_data["info"]["gameMode"] or "Desconocido"
-        
-        stats = create_stats_dict(participant, game_duration)
-        mensaje_openai = await generar_mensaje_openai(game_name, stats, participant, game_mode)
-        
-        # Create champion icon URL
-        champion_icon_url = get_champion_icon_url(champ)
-
-        # Custom mapping for game mode names
-        custom_game_modes = {
-            "CLASSIC": "Grieta del Invocador",
-            "ARAM": "ARAM",
-            "URF": "Ultra Rapid Fire", 
-            "CHERRY": "Arena de Noxus"
-        }
-        game_mode_name = custom_game_modes.get(game_mode, game_mode)
-
-        # Create Discord embed
-        embed = discord.Embed(
-            title=f"Última partida de {riot_id}",
-            description=f"🎯 KDA: {kda} | 🕹️ {resultado} | 🕒 {game_duration} minutos",
-            color=0x00ff00 if resultado == "Victoria" else 0xff0000
-        )
-        
-        embed.add_field(
-            name=f"Campeón: {champ}",
-            value=f"Modo de juego: {game_mode_name}",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="Análisis de la partida:",
-            value=mensaje_openai,
-            inline=False
-        )
-        
-        embed.set_thumbnail(url=champion_icon_url)
-        embed.set_footer(text="CapitanCoditos,Tu afk favorito.")
-
+        embed = await create_ultima_partida_embed(riot_id)
         await interaction.followup.send(embed=embed)
     except Exception as e:
         await handle_command_error(interaction, e)
@@ -119,7 +74,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
     await interaction.response.defer()
 
     try:
-        participant, match_data, game_duration = await get_player_match_data(invocador)
+        participant, match_data, game_duration, game_name, stats, game_mode = await get_match_analysis_data(invocador)
         participants = match_data['info']['participants']
         
         # Get allies (same team as the player)

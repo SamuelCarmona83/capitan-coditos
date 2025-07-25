@@ -1,7 +1,17 @@
 import requests
 import os
+import discord
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
+
+# Import here to avoid circular imports
+def _import_get_player_match_data():
+    from riot.api import get_player_match_data
+    return get_player_match_data
+
+def _import_generar_mensaje_openai():
+    from ai.openai_service import generar_mensaje_openai
+    return generar_mensaje_openai
 
 def parse_riot_id(riot_id):
     """Parse and validate Riot ID format."""
@@ -173,7 +183,76 @@ def encontrar_peor_jugador(participants):
     peor_partida = next(p for p in participants if get_player_name(p) == peor_nombre)
     return peor_nombre, peor_partida, scores[peor_nombre]
 
+# Common match analysis functions
+async def get_match_analysis_data(riot_id: str):
+    """Get common match analysis data used by both commands"""
+    get_player_match_data = _import_get_player_match_data()
+    participant, match_data, game_duration = await get_player_match_data(riot_id)
+    game_name = parse_riot_id(riot_id)[0]
+    
+    stats = create_stats_dict(participant, game_duration)
+    game_mode = match_data["info"]["gameMode"] or "Desconocido"
+    
+    return participant, match_data, game_duration, game_name, stats, game_mode
+
+async def create_ultima_partida_embed(riot_id: str):
+    """Create a complete ultima partida embed with AI analysis"""
+    # Get match data
+    participant, match_data, game_duration, game_name, stats, game_mode = await get_match_analysis_data(riot_id)
+    
+    # Generate AI analysis
+    generar_mensaje_openai = _import_generar_mensaje_openai()
+    mensaje_openai = await generar_mensaje_openai(game_name, stats, participant, game_mode)
+    
+    # Create embed
+    return await create_match_analysis_embed(riot_id, participant, match_data, game_duration, mensaje_openai)
+
 # Discord utility functions
+async def create_match_analysis_embed(riot_id: str, participant, match_data, game_duration, analysis_message: str):
+    """Create a standardized Discord embed for match analysis"""
+    game_name = parse_riot_id(riot_id)[0]
+    
+    champ = participant["championName"]
+    kda = format_kda(participant)
+    resultado, _ = get_match_result_info(participant)
+    game_mode = match_data["info"]["gameMode"] or "Desconocido"
+    
+    # Create champion icon URL
+    champion_icon_url = get_champion_icon_url(champ)
+
+    # Custom mapping for game mode names
+    custom_game_modes = {
+        "CLASSIC": "Grieta del Invocador",
+        "ARAM": "ARAM",
+        "URF": "Ultra Rapid Fire", 
+        "CHERRY": "Arena de Noxus"
+    }
+    game_mode_name = custom_game_modes.get(game_mode, game_mode)
+
+    # Create Discord embed
+    embed = discord.Embed(
+        title=f"Última partida de {riot_id}",
+        description=f"🎯 KDA: {kda} | 🕹️ {resultado} | 🕒 {game_duration} minutos",
+        color=0x00ff00 if resultado == "Victoria" else 0xff0000
+    )
+    
+    embed.add_field(
+        name=f"Campeón: {champ}",
+        value=f"Modo de juego: {game_mode_name}",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="Análisis de la partida:",
+        value=analysis_message,
+        inline=False
+    )
+    
+    embed.set_thumbnail(url=champion_icon_url)
+    embed.set_footer(text="CapitanCoditos, Tu afk favorito.")
+    
+    return embed
+
 async def send_long_message(interaction, content):
     """Send long messages by splitting them if they exceed Discord's limit."""
     max_length = 2000
