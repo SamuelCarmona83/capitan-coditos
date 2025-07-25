@@ -61,7 +61,7 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
 
     Escribe un mensaje breve (máximo 2 oraciones ni mas ni menos) con humor negro gamer, mencionando específicamente sus estadísticas.
     Usa memes de gaming, referencias a otros juegos más fáciles o juegos para nenes pero de manera ocasional. tambien le pudes decir casual.
-    (Candy Crush, Minecraft, etc), o tiempo en pantalla gris, mandalos a ver pocoyo. Haz comentarios pasivo agresivos como "Tienes una increible habilidad casi pareces Plata II"
+    o tiempo en pantalla gris, mandalos a ver algun programa para nenes. Haz comentarios pasivo agresivos como "Tienes una increible habilidad casi pareces Plata II"
     Si puedes utiliza manera de hablar latinoamerica, coloquialismos que oscilen entre los diferentes paises de la region (máximo 2 oraciones).
     """
 

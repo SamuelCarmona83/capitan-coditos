@@ -9,6 +9,14 @@ A Discord bot that provides League of Legends match analysis using the Riot API 
 - 🤖 **AI-Powered Commentary** - Sarcastic and brutally honest match analysis using OpenAI
 - 🎮 **Riot ID Support** - Works with new Riot ID format (Name#Tag)
 
+## 🎨 Teaser Images
+
+Here are some teaser images showcasing the bot's functionality:
+
+![Teaser Image 1](./assets/image.png)
+
+![Teaser Image 2](./assets/image%20copy.png)
+
 ## 🐳 Docker Hub
 
 ### Quick Start with Docker
