@@ -9,6 +9,10 @@ def _import_get_player_match_data():
     from riot.api import get_player_match_data
     return get_player_match_data
 
+def _import_get_player_multiple_matches():
+    from riot.api import get_player_multiple_matches
+    return get_player_multiple_matches
+
 def _import_generar_mensaje_openai():
     from ai.openai_service import generar_mensaje_openai
     return generar_mensaje_openai
@@ -206,6 +210,62 @@ async def create_ultima_partida_embed(riot_id: str):
     
     # Create embed
     return await create_match_analysis_embed(riot_id, participant, match_data, game_duration, mensaje_openai)
+
+async def create_match_history_embed(riot_id: str, match_results):
+    """Create embed showing multiple matches with summary"""
+    game_name = parse_riot_id(riot_id)[0]
+    
+    # Calculate overall stats
+    total_wins = 0
+    total_kills = 0
+    total_deaths = 0
+    total_assists = 0
+    
+    match_summaries = []
+    for i, (participant, match_data, game_duration, match_id) in enumerate(match_results):
+        champ = participant["championName"]
+        kda_str = format_kda(participant)
+        resultado, emoji = get_match_result_info(participant)
+        
+        if resultado == "Victoria":
+            total_wins += 1
+        
+        total_kills += participant["kills"]
+        total_deaths += participant["deaths"] 
+        total_assists += participant["assists"]
+        
+        # Custom mapping for game mode names
+        game_mode = match_data["info"]["gameMode"] or "Desconocido"
+        custom_game_modes = {
+            "CLASSIC": "Grieta",
+            "ARAM": "ARAM",
+            "URF": "URF",
+            "CHERRY": "Arena"
+        }
+        game_mode_name = custom_game_modes.get(game_mode, game_mode)
+        
+        match_summaries.append(f"`{i+1}.` {emoji} **{champ}** - {kda_str} | {game_mode_name} ({game_duration}min)")
+    
+    # Calculate win rate and average KDA
+    win_rate = (total_wins / len(match_results)) * 100
+    avg_kda = (total_kills + total_assists) / max(1, total_deaths)
+    
+    # Create embed
+    embed = discord.Embed(
+        title=f"Historial de {riot_id} (Últimas {len(match_results)} partidas)",
+        description=f"🏆 **{win_rate:.0f}% WR** | 📊 **{avg_kda:.1f} KDA promedio**",
+        color=0x00ff00 if win_rate >= 50 else 0xff9900 if win_rate >= 30 else 0xff0000
+    )
+    
+    embed.add_field(
+        name="📋 Partidas recientes:",
+        value="\n".join(match_summaries),
+        inline=False
+    )
+    
+    embed.set_footer(text="CapitanCoditos, Tu afk favorito. • Haz clic en una partida para ver el análisis detallado.")
+    
+    return embed
 
 # Discord utility functions
 async def create_match_analysis_embed(riot_id: str, participant, match_data, game_duration, analysis_message: str):

@@ -117,7 +117,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         )
         
         embed.add_field(
-            name=f"Peor jugador: {peor_nombre} ({peor_champion})",
+            name=f"Jugador mas vegano: {peor_nombre} ({peor_champion})",
             value=f"Modo de juego: {game_mode_name}",
             inline=False
         )
@@ -129,7 +129,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         )
         
         embed.add_field(
-            name="Análisis del peor jugador:",
+            name="Análisis del mas mocho:",
             value=mensaje,
             inline=False
         )
