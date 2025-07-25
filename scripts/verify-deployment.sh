@@ -6,6 +6,11 @@ echo "🎮 Capitán Coditos - Discord Bot Deployment Verification"
 echo "============================================="
 echo ""
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the project root (parent directory of scripts)
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Check if Docker is running
 if ! docker info >/dev/null 2>&1; then
     echo "❌ Docker is not running. Please start Docker and try again."

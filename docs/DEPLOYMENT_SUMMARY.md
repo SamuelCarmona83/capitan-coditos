@@ -41,7 +41,7 @@ docker-compose -f docker-compose.prod.yml up -d
 ### Verification
 ```bash
 # Run the verification script
-./verify-deployment.sh
+./scripts/verify-deployment.sh
 ```
 
 ## 📁 Project Files Created/Updated
@@ -52,8 +52,8 @@ docker-compose -f docker-compose.prod.yml up -d
 - ✅ `.dockerignore` - Optimized build context
 
 ### Scripts
-- ✅ `push-to-dockerhub.sh` - Automated build and push script
-- ✅ `verify-deployment.sh` - Deployment verification script
+- ✅ `scripts/push-to-dockerhub.sh` - Automated build and push script
+- ✅ `scripts/verify-deployment.sh` - Deployment verification script
 
 ### Documentation
 - ✅ `README.md` - Complete usage documentation

@@ -12,12 +12,12 @@
 Run the provided script with your Docker Hub username:
 
 ```bash
-./push-to-dockerhub.sh YOUR_DOCKERHUB_USERNAME
+./scripts/push-to-dockerhub.sh YOUR_DOCKERHUB_USERNAME
 ```
 
 Example:
 ```bash
-./push-to-dockerhub.sh johnsmith
+./scripts/push-to-dockerhub.sh johnsmith
 ```
 
 The script will:
@@ -148,7 +148,7 @@ To update your bot:
 1. Make code changes
 2. Rebuild and push:
    ```bash
-   ./push-to-dockerhub.sh yourusername
+   ./scripts/push-to-dockerhub.sh yourusername
    ```
 3. Update running containers:
    ```bash
@@ -161,7 +161,7 @@ To update your bot:
 
 ### Common Issues:
 
-1. **Permission denied**: Make sure the script is executable: `chmod +x push-to-dockerhub.sh`
+1. **Permission denied**: Make sure the script is executable: `chmod +x scripts/push-to-dockerhub.sh`
 2. **Docker login issues**: Use `docker logout` then `docker login`
 3. **Image too large**: Check `.dockerignore` is working properly
 4. **Build failures**: Ensure all dependencies are in `requirements.txt`
