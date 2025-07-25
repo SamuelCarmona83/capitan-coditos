@@ -132,14 +132,8 @@ async def generar_mensaje_openai(nombre, stats):
     response = await openai_client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {
-                "role": "system",
-                "content": "Eres un jugador de LoL con humor ácido, opiniones fuertes y objetividad si el desempeño fue bueno."
-            },
-            {
-                "role": "user",
-                "content": prompt + "\n\nSi el jugador realizó una buena actuación, evalúa objetivamente su desempeño."
-            }
+            {"role": "system", "content": "Eres un jugador de LoL con humor ácido, opiniones fuertes y objetividad si el desempeño fue bueno."},
+            {"role": "user", "content": prompt + "\n\nSi el jugador realizó una buena actuación, evalúa objetivamente su desempeño."}
         ],
         temperature=0.8
     )

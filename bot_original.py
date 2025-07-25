@@ -105,11 +105,6 @@ async def get_player_match_data(riot_id):
         return participant, match_data, game_duration
     except requests.exceptions.RequestException:
         raise ValueError("Error al conectar con la API de Riot.")
-
-
-# OpenAI integration
-async def generar_mensaje_openai(nombre, stats):
-    """Generate sarcastic LoL coach message using OpenAI."""
     prompt = f"""
     Actúa como un entrenador de League of Legends brutalmente honesto y sarcástico.
     Genera un mensaje corto y directo usando el formato de texto de Discord:
@@ -132,14 +127,8 @@ async def generar_mensaje_openai(nombre, stats):
     response = await openai_client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {
-                "role": "system",
-                "content": "Eres un jugador de LoL con humor ácido, opiniones fuertes y objetividad si el desempeño fue bueno."
-            },
-            {
-                "role": "user",
-                "content": prompt + "\n\nSi el jugador realizó una buena actuación, evalúa objetivamente su desempeño."
-            }
+            {"role": "system", "content": "Eres un jugador de LoL con humor ácido, opiniones fuertes y objetividad si el desempeño fue bueno."},
+            {"role": "user", "content": prompt + "\n\nSi el jugador realizó una buena actuación, evalúa objetivamente su desempeño."}
         ],
         temperature=0.8
     )
@@ -147,66 +136,124 @@ async def generar_mensaje_openai(nombre, stats):
     return response.choices[0].message.content.strip()
 
 
-# Player analysis functions
-def encontrar_peor_jugador(participants):
-    """Find the worst player in a list of participants."""
-    def calcular_score(p):
-        k, d, a = p["kills"], p["deaths"], p["assists"]
-        damage = p["totalDamageDealtToChampions"]
-        return (k + a) / max(1, d) + (damage / 10000)
-
-    scores = {get_player_name(p): calcular_score(p) for p in participants}
-    
-    if not scores:
-        return "Unknown", participants[0], 0
-        
-    peor_nombre = min(scores, key=scores.get)
-    peor_partida = next(p for p in participants if get_player_name(p) == peor_nombre)
-    return peor_nombre, peor_partida, scores[peor_nombre]
-
-
-# Discord utility functions
 async def send_long_message(interaction, content):
-    """Send long messages by splitting them if they exceed Discord's limit."""
+    # Divide el mensaje en partes si excede el límite de Discord (2000 caracteres)
     max_length = 2000
     for i in range(0, len(content), max_length):
         await interaction.followup.send(content[i:i + max_length])
 
 
-async def handle_command_error(interaction, error):
-    """Centralized error handling for commands."""
-    if isinstance(error, ValueError):
-        await interaction.followup.send(f"⚠️ {str(error)}")
-    else:
-        await interaction.followup.send(f"❌ Ocurrió un error: {str(error)}")
-
-
-# Discord commands
 @app_commands.describe(riot_id="Tu Riot ID completo (ej: Roga#LAN)")
 @tree.command(name="ultimapartida", description="Consulta tu última partida de LoL usando Riot ID (Roga#LAN)")
 async def ultimapartida(interaction: discord.Interaction, riot_id: str):
     await interaction.response.defer()
 
-    try:
-        participant, _, game_duration = await get_player_match_data(riot_id)
-        game_name = parse_riot_id(riot_id)[0]
-        
-        champ = participant["championName"]
-        kda = format_kda(participant)
-        resultado, _ = get_match_result_info(participant)
-        
-        stats = create_stats_dict(participant, game_duration)
-        mensaje_openai = await generar_mensaje_openai(game_name, stats)
+    if "#" not in riot_id:
+        await interaction.followup.send("❌ El Riot ID debe tener formato `Nombre#Tag` (ej: Roga#LAN)")
+        return
 
-        full_message = (
-            f"**{riot_id}** jugó como **{champ}**\n"
-            f"🎯 KDA: {kda} | 🕹️ {resultado} | 🕒 {game_duration} minutos\n\n"
-            f"{mensaje_openai}"
-        )
+    game_name, tag_line = riot_id.split("#")
 
-        await send_long_message(interaction, full_message)
-    except Exception as e:
-        await handle_command_error(interaction, e)
+    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    r = requests.get(url, headers=headers)
+
+    if r.status_code != 200:
+        await interaction.followup.send("⚠️ No encontré ese Riot ID.")
+        return
+
+    account_data = r.json()
+    puuid = account_data["puuid"]
+
+    matches = get_match_history(puuid)
+    if not matches:
+        await interaction.followup.send("⚠️ No encontré partidas recientes.")
+        return
+
+    match_data = get_match_data(matches[0])
+    participant = next(p for p in match_data["info"]["participants"] if p["puuid"] == puuid)
+
+    champ = participant["championName"]
+    kda = f"{participant['kills']}/{participant['deaths']}/{participant['assists']}"
+    resultado = "Victoria" if participant["win"] else "Derrota"
+    tiempo = match_data["info"]["gameDuration"] // 60
+
+    mensaje_openai = await generar_mensaje_openai(game_name, {
+        "kills": participant["kills"],
+        "deaths": participant["deaths"],
+        "assists": participant["assists"],
+        "totalDamageDealtToChampions": participant["totalDamageDealtToChampions"],
+        "gameDuration": tiempo
+    })
+
+    full_message = (
+        f"**{riot_id}** jugó como **{champ}**\n"
+        f"🎯 KDA: {kda} | 🕹️ {resultado} | 🕒 {tiempo} minutos\n\n"
+        f"{mensaje_openai}"
+    )
+
+    await send_long_message(interaction, full_message)
+
+
+def encontrar_peor_jugador(participants):
+    def calcular_score(p):
+        k = p["kills"]
+        d = p["deaths"]
+        a = p["assists"]
+        damage = p["totalDamageDealtToChampions"]
+        return (k + a) / max(1, d) + (damage / 10000)
+
+    scores = {}
+    for p in participants:
+        # Try different name fields - riotIdGameName is more reliable
+        name = p.get('riotIdGameName') or p.get('summonerName') or f"Player_{p.get('participantId', 'Unknown')}"
+        if name:
+            scores[name] = calcular_score(p)
+    
+    if not scores:  # If no valid players found
+        return "Unknown", participants[0], 0
+        
+    peor_nombre = min(scores, key=scores.get)
+    peor_partida = next(p for p in participants if 
+                       (p.get('riotIdGameName') or p.get('summonerName') or f"Player_{p.get('participantId', 'Unknown')}") == peor_nombre)
+    return peor_nombre, peor_partida, scores[peor_nombre]
+
+
+# Fetch summoner data by name
+def get_summoner_data(game_name, tag_line):
+
+
+    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 404:
+        raise ValueError("Summoner not found.")
+    elif response.status_code == 429:
+        raise ValueError("Rate limit exceeded. Please try again later.")
+    response.raise_for_status()
+    return response.json()
+
+
+# Fetch match history by PUUID
+def get_match_history(puuid):
+    url = f"https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?start=0&count=1"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 429:
+        raise ValueError("Rate limit exceeded. Please try again later.")
+    response.raise_for_status()
+    return response.json()
+
+
+# Fetch match data by match ID
+def get_match_data(match_id):
+    url = f"https://americas.api.riotgames.com/lol/match/v5/matches/{match_id}"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 429:
+        raise ValueError("Rate limit exceeded. Please try again later.")
+    response.raise_for_status()
+    return response.json()
 
 
 @app_commands.describe(invocador="Tu nombre de invocador (ej: Roga#LAN)")
@@ -215,25 +262,40 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
     await interaction.response.defer()
 
     try:
-        participant, match_data, game_duration = await get_player_match_data(invocador)
+        if "#" in invocador:
+            game_name, tag_line = invocador.split("#")
+
+        # Fetch summoner data
+        summoner = get_summoner_data(game_name, tag_line)
+        puuid = summoner['puuid']
+
+        # Fetch match history
+        matches = get_match_history(puuid)
+        if not matches:
+            await interaction.followup.send("⚠️ No se encontraron partidas recientes.")
+            return        # Fetch match data
+        match_data = get_match_data(matches[0])
         participants = match_data['info']['participants']
+        game_duration = match_data['info']['gameDuration'] // 60  # Convert to minutes        # Find the player's team
+        player = next(p for p in participants if p['puuid'] == puuid)
+        player_team = player['teamId']
         
         # Get allies (same team as the player)
-        player_team = participant['teamId']
         aliados = [p for p in participants if p['teamId'] == player_team]
         
-        # Analyze the worst player from the ally team
+        # Analyze the worst player from the ally team only
         peor_nombre, peor_stats, _ = encontrar_peor_jugador(aliados)
-        stats = create_stats_dict(peor_stats, game_duration)
-        mensaje = await generar_mensaje_openai(peor_nombre, stats)
+        peor_stats['gameDuration'] = game_duration  # Add game duration to stats
+        mensaje = await generar_mensaje_openai(peor_nombre, peor_stats)        
         
-        # Format team stats
+        # Format team stats with consistent styling - use riotIdGameName if summonerName is empty
         resumen_equipo = "\n".join([
-            f"• **{get_player_name(p)}** - {p['championName']} (`{format_kda(p)}`)"
+            f"• **{p.get('riotIdGameName', p.get('summonerName', 'Unknown'))}** - {p['championName']} (`{p['kills']}/{p['deaths']}/{p['assists']}`)"
             for p in aliados
         ])
 
-        resultado, emoji_resultado = get_match_result_info(participant)
+        resultado = "Victoria" if player["win"] else "Derrota"
+        emoji_resultado = "🏆" if player["win"] else "💔"
 
         # Create formatted message
         mensaje_formateado = (
@@ -244,8 +306,11 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         )
 
         await interaction.followup.send(mensaje_formateado)
+
+    except ValueError as e:
+        await interaction.followup.send(f"⚠️ {str(e)}")
     except Exception as e:
-        await handle_command_error(interaction, e)
+        await interaction.followup.send(f"❌ Ocurrió un error: {str(e)}")
 
 
 @client.event
