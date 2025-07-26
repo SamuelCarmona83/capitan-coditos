@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     volumes:
-      - .:/app
+      - ./database:/app/database
     ports:
       - "8080:80"
     restart: always

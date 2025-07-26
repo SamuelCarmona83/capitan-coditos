@@ -2,7 +2,9 @@ import discord
 from discord import app_commands
 from riot.api import get_player_multiple_matches
 from utils.helpers import create_match_history_embed, create_ultima_partida_embed, handle_command_error, parse_riot_id, create_stats_dict, get_match_result_info, format_kda
+from utils.autocomplete import riot_id_autocomplete
 from ai.openai_service import generar_mensaje_openai
+from database import save_summoner
 
 class MatchHistoryView(discord.ui.View):
     def __init__(self, riot_id: str, match_results):
@@ -109,6 +111,9 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str):
     await interaction.response.defer()
 
     try:
+        # Save summoner to database
+        save_summoner(riot_id)
+        
         # Get last 5 matches
         match_results = await get_player_multiple_matches(riot_id, count=5)
         
@@ -129,6 +134,7 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str):
 
 def register_historialpartidas(tree):
     @app_commands.describe(riot_id="Tu Riot ID completo (ej: Roga#LAN)")
+    @app_commands.autocomplete(riot_id=riot_id_autocomplete)
     @tree.command(name="historialpartidas", description="Consulta las últimas 5 partidas con análisis detallado de cada una.")
     async def command(interaction: discord.Interaction, riot_id: str):
         await historial_partidas(interaction, riot_id)

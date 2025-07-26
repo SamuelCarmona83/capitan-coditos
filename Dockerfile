@@ -19,11 +19,17 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the bot code
+# Copy the bot code and all modules
 COPY bot.py .
+COPY ai/ ./ai/
+COPY commands/ ./commands/
+COPY database/ ./database/
+COPY riot/ ./riot/
+COPY utils/ ./utils/
 
-# Change ownership of the app directory to botuser
-RUN chown -R botuser:botuser /app
+# Create directory for database with proper permissions
+RUN mkdir -p /app/database && \
+    chown -R botuser:botuser /app
 
 # Switch to non-root user
 USER botuser

@@ -1,1 +1,4 @@
 *.env
+# Database files
+database/summoners.db
+*.db

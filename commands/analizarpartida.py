@@ -1,7 +1,9 @@
 import discord
 from discord import app_commands
 from utils.helpers import encontrar_peor_jugador, create_stats_dict, get_player_name, format_kda, get_match_result_info, handle_command_error, get_champion_icon_url, get_match_analysis_data, create_ultima_partida_embed
+from utils.autocomplete import riot_id_autocomplete
 from ai.openai_service import generar_mensaje_openai
+from database import save_summoner
 
 def get_player_riot_id(participant):
     """Extract full Riot ID from participant data (Name#Tag format)"""
@@ -74,6 +76,9 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
     await interaction.response.defer()
 
     try:
+        # Save summoner to database
+        save_summoner(invocador)
+        
         participant, match_data, game_duration, game_name, stats, game_mode = await get_match_analysis_data(invocador)
         participants = match_data['info']['participants']
         
@@ -174,6 +179,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
 
 def register_analizarpartida(tree):
     @app_commands.describe(invocador="Tu nombre de invocador (ej: Roga#LAN)")
+    @app_commands.autocomplete(invocador=riot_id_autocomplete)
     @tree.command(name="analizarpartida", description="Analiza tu última partida y encuentra al peor jugador con un resumen divertido.")
     async def command(interaction: discord.Interaction, invocador: str):
         await analizar_partida(interaction, invocador)
