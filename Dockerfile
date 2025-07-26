@@ -27,9 +27,12 @@ COPY database/ ./database/
 COPY riot/ ./riot/
 COPY utils/ ./utils/
 
-# Create directory for database with proper permissions
+# Ensure database directory exists and has proper permissions for SQLite
 RUN mkdir -p /app/database && \
-    chown -R botuser:botuser /app
+    touch /app/database/.gitkeep && \
+    chown -R botuser:botuser /app && \
+    chmod -R 755 /app && \
+    chmod -R 775 /app/database
 
 # Switch to non-root user
 USER botuser
