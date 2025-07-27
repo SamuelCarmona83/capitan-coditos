@@ -46,6 +46,35 @@ def format_kda(participant):
     """Format KDA string from participant data."""
     return f"{participant['kills']}/{participant['deaths']}/{participant['assists']}"
 
+def is_valid_match_for_analysis(match_data, participant):
+    """Check if a match is valid for AI analysis (not a remake or very short game)."""
+    game_duration_seconds = match_data["info"]["gameDuration"]
+    game_duration_minutes = game_duration_seconds // 60
+    
+    # Check for remake conditions
+    # 1. Very short games (less than 5 minutes are usually remakes)
+    if game_duration_minutes < 5:
+        return False
+    
+    # 2. Check if game ended in early surrender (remake)
+    game_ended_early = match_data["info"].get("gameEndedInEarlySurrender", False)
+    if game_ended_early:
+        return False
+    
+    # 3. Check for extremely low stats that suggest a remake
+    # In remakes, players usually have very low kills, deaths, and damage
+    total_damage = participant.get("totalDamageDealtToChampions", 0)
+    kills = participant.get("kills", 0)
+    deaths = participant.get("deaths", 0)
+    assists = participant.get("assists", 0)
+    
+    # If all stats are extremely low, it's likely a remake
+    if (total_damage < 500 and kills == 0 and deaths <= 1 and assists == 0 and 
+        game_duration_minutes < 8):
+        return False
+    
+    return True
+
 def format_champion_name_for_url(champion_name):
     """Format champion name for Data Dragon URL."""
     # Handle special champion names that have different URL formats
@@ -208,7 +237,12 @@ async def create_ultima_partida_embed(riot_id: str):
     # Get match data
     participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(riot_id)
     
-    # Generate AI analysis
+    # Check if match is valid for analysis
+    if not is_valid_match_for_analysis(match_data, participant):
+        # Create embed without AI analysis for remake/very short games
+        return await create_simple_match_embed(riot_id, participant, match_data, game_duration, summoner_profile)
+    
+    # Generate AI analysis for valid matches
     generar_mensaje_openai = _import_generar_mensaje_openai()
     mensaje_openai = await generar_mensaje_openai(game_name, stats, participant, game_mode)
     
@@ -309,13 +343,70 @@ async def create_match_analysis_embed(riot_id: str, participant, match_data, gam
         value=f"Modo de juego: {game_mode_name}",
         inline=False
     )
-    
-    # Truncate analysis message if too long
+      # Truncate analysis message if too long
     if len(analysis_message) > 1020:  # Leave margin for formatting
         analysis_message = analysis_message[:1017] + "..."
     
     embed.add_field(
         name="Análisis de la partida:",
+        value=analysis_message,
+        inline=False
+    )
+    
+    embed.set_thumbnail(url=champion_icon_url)
+    
+    # Set summoner profile icon if available
+    if summoner_profile:
+        profile_icon_url = get_summoner_icon_url(summoner_profile['profileIconId'])
+        embed.set_author(name=f"Nivel {summoner_profile['summonerLevel']}", icon_url=profile_icon_url)
+    
+    embed.set_footer(text="CapitanCoditos, Tu afk favorito.")
+    
+    return embed
+
+async def create_simple_match_embed(riot_id: str, participant, match_data, game_duration, summoner_profile=None):
+    """Create a simple Discord embed for remake/very short matches without AI analysis"""
+    game_name = parse_riot_id(riot_id)[0]
+    
+    champ = participant["championName"]
+    kda = format_kda(participant)
+    resultado, _ = get_match_result_info(participant)
+    game_mode = match_data["info"]["gameMode"] or "Desconocido"
+    
+    # Create champion icon URL
+    champion_icon_url = get_champion_icon_url(champ)
+
+    # Custom mapping for game mode names
+    custom_game_modes = {
+        "CLASSIC": "Grieta del Invocador",
+        "ARAM": "ARAM",
+        "URF": "Ultra Rapid Fire", 
+        "CHERRY": "Arena de Noxus"
+    }
+    game_mode_name = custom_game_modes.get(game_mode, game_mode)
+
+    # Create Discord embed
+    embed = discord.Embed(
+        title=f"Última partida de {riot_id}",
+        description=f"🎯 KDA: {kda} | 🕹️ {resultado} | 🕒 {game_duration} minutos",
+        color=0x00ff00 if resultado == "Victoria" else 0xff0000
+    )
+    embed.add_field(
+        name=f"Campeón: {champ}",
+        value=f"Modo de juego: {game_mode_name}",
+        inline=False
+    )
+    
+    # Check if it's a very short game (likely remake)
+    if game_duration < 5:
+        analysis_message = "⚠️ **Partida muy corta** - Esta partida fue muy breve (posible remake). No hay suficientes datos para un análisis completo."
+    elif game_duration < 8:
+        analysis_message = "⏰ **Partida corta** - Esta partida terminó muy rápido. El análisis puede no ser representativo del rendimiento habitual."
+    else:
+        analysis_message = "📊 **Partida sin análisis** - No se generó análisis automático para esta partida."
+    
+    embed.add_field(
+        name="Estado de la partida:",
         value=analysis_message,
         inline=False
     )
@@ -343,3 +434,32 @@ async def handle_command_error(interaction, error):
         await interaction.followup.send(f"⚠️ {str(error)}")
     else:
         await interaction.followup.send(f"❌ Ocurrió un error: {str(error)}")
+
+def is_valid_match_for_analysis(match_data, participant):
+    """Check if a match is valid for AI analysis (not a remake or very short game)."""
+    game_duration_seconds = match_data["info"]["gameDuration"]
+    game_duration_minutes = game_duration_seconds // 60
+    
+    # Check for remake conditions
+    # 1. Very short games (less than 5 minutes are usually remakes)
+    if game_duration_minutes < 5:
+        return False
+    
+    # 2. Check if game ended in early surrender (remake)
+    game_ended_early = match_data["info"].get("gameEndedInEarlySurrender", False)
+    if game_ended_early:
+        return False
+    
+    # 3. Check for extremely low stats that suggest a remake
+    # In remakes, players usually have very low kills, deaths, and damage
+    total_damage = participant.get("totalDamageDealtToChampions", 0)
+    kills = participant.get("kills", 0)
+    deaths = participant.get("deaths", 0)
+    assists = participant.get("assists", 0)
+    
+    # If all stats are extremely low, it's likely a remake
+    if (total_damage < 500 and kills == 0 and deaths <= 1 and assists == 0 and 
+        game_duration_minutes < 8):
+        return False
+    
+    return True

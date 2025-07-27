@@ -33,6 +33,64 @@ async def show_player_ultima_partida(interaction: discord.Interaction, riot_id: 
     except Exception as e:
         await handle_command_error(interaction, e)
 
+async def create_simple_team_analysis_embed(riot_id: str, participant, match_data, game_duration, summoner_profile=None):
+    """Create a simple team analysis embed for remake/very short matches without AI analysis"""
+    from utils.helpers import parse_riot_id, get_match_result_info, get_summoner_icon_url
+    
+    game_name = parse_riot_id(riot_id)[0]
+    champ = participant["championName"]
+    resultado, _ = get_match_result_info(participant)
+    game_mode = match_data["info"]["gameMode"] or "Desconocido"
+    
+    # Custom mapping for game mode names
+    custom_game_modes = {
+        "CLASSIC": "Grieta del Invocador",
+        "ARAM": "ARAM", 
+        "URF": "Ultra Rapid Fire",
+        "CHERRY": "Arena de Noxus"
+    }
+    game_mode_name = custom_game_modes.get(game_mode, game_mode)
+    
+    # Create Discord embed
+    embed = discord.Embed(
+        title=f"Análisis de partida de {riot_id}",
+        description=f"🕒 {game_duration} minutos | 🕹️ {resultado}",
+        color=0x00ff00 if resultado == "Victoria" else 0xff0000
+    )
+    
+    embed.add_field(
+        name=f"Campeón: {champ}",
+        value=f"Modo de juego: {game_mode_name}",
+        inline=False
+    )
+    
+    # Check if it's a very short game (likely remake)
+    if game_duration < 5:
+        analysis_message = "⚠️ **Partida remake** - Esta partida fue un remake. No se realizó análisis del equipo ya que la partida no tuvo desarrollo normal."
+    elif game_duration < 8:
+        analysis_message = "⏰ **Partida muy corta** - Esta partida terminó muy rápido. No hay suficientes datos para un análisis significativo del rendimiento del equipo."
+    else:
+        analysis_message = "📊 **Partida sin análisis** - No se generó análisis automático para esta partida."
+    
+    embed.add_field(
+        name="Estado del análisis:",
+        value=analysis_message,
+        inline=False
+    )
+    
+    # Set champion thumbnail
+    champion_icon_url = get_champion_icon_url(champ)
+    embed.set_thumbnail(url=champion_icon_url)
+    
+    # Set summoner profile icon if available
+    if summoner_profile:
+        profile_icon_url = get_summoner_icon_url(summoner_profile['profileIconId'])
+        embed.set_author(name=f"Nivel {summoner_profile['summonerLevel']}", icon_url=profile_icon_url)
+    
+    embed.set_footer(text="CapitanCoditos, Tu afk favorito.")
+    
+    return embed
+
 class TeamMemberView(discord.ui.View):
     def __init__(self, aliados):
         super().__init__(timeout=300)  # 5 minutes timeout
@@ -80,6 +138,17 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         save_summoner(invocador)
         
         participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(invocador)
+        
+        # Import the validation function
+        from utils.helpers import is_valid_match_for_analysis
+        
+        # Check if match is valid for analysis
+        if not is_valid_match_for_analysis(match_data, participant):
+            # For remake/very short games, show a simple message instead of team analysis
+            embed = await create_simple_team_analysis_embed(invocador, participant, match_data, game_duration, summoner_profile)
+            await interaction.followup.send(embed=embed)
+            return
+        
         participants = match_data['info']['participants']
         
         # Get allies (same team as the player)
