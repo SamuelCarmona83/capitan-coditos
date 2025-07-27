@@ -63,7 +63,7 @@ class MatchHistoryView(discord.ui.View):
 
 async def create_simple_match_detail_embed(riot_id: str, participant, match_data, game_duration, match_number: int, summoner_profile=None):
     """Create simple embed for remake/very short matches without AI analysis"""
-    from utils.helpers import get_champion_icon_url
+    from app.utils.helpers import get_champion_icon_url
     
     game_name = parse_riot_id(riot_id)[0]
     

@@ -20,12 +20,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy the bot code and all modules
-COPY bot.py .
-COPY ai/ ./ai/
-COPY commands/ ./commands/
-COPY database/ ./database/
-COPY riot/ ./riot/
-COPY utils/ ./utils/
+COPY app/ ./
 
 # Ensure database directory exists and has proper permissions for SQLite
 RUN mkdir -p /app/database && \

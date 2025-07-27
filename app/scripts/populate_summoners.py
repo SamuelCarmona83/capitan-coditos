@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append('.')
 
-from database import save_summoner, get_summoners_for_autocomplete, get_summoner_stats
+from app.database import save_summoner, get_summoners_for_autocomplete, get_summoner_stats
 
 def populate_summoners():
     """Popula la base de datos con summoners específicos"""
