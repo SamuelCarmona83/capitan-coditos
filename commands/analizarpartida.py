@@ -156,8 +156,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
                 value=resumen_equipo,
                 inline=False
             )
-        
-        # Truncate analysis message if too long
+          # Truncate analysis message if too long
         if len(mensaje) > 1020:  # Leave margin for formatting
             mensaje = mensaje[:1017] + "..."
         
@@ -168,6 +167,13 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         )
         
         embed.set_thumbnail(url=champion_icon_url)
+        
+        # Set summoner profile icon if available
+        if summoner_profile:
+            from utils.helpers import get_summoner_icon_url
+            profile_icon_url = get_summoner_icon_url(summoner_profile['profileIconId'])
+            embed.set_author(name=f"Nivel {summoner_profile['summonerLevel']}", icon_url=profile_icon_url)
+        
         embed.set_footer(text="CapitanCoditos, Tu afk favorito. • Haz clic en un jugador para ver su última partida.")
         
         # Create view with clickable buttons

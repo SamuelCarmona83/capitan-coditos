@@ -7,10 +7,11 @@ from ai.openai_service import generar_mensaje_openai
 from database import save_summoner
 
 class MatchHistoryView(discord.ui.View):
-    def __init__(self, riot_id: str, match_results):
+    def __init__(self, riot_id: str, match_results, summoner_profile=None):
         super().__init__(timeout=300)  # 5 minutes timeout
         self.riot_id = riot_id
         self.match_results = match_results
+        self.summoner_profile = summoner_profile
         
         # Add buttons for each match (max 5)
         for i, (participant, match_data, game_duration, match_id) in enumerate(match_results[:5]):
@@ -37,12 +38,12 @@ class MatchHistoryView(discord.ui.View):
                 game_name = parse_riot_id(self.riot_id)[0]
                 stats = create_stats_dict(participant, game_duration)
                 game_mode = match_data["info"]["gameMode"] or "Desconocido"
-                
-                # Generate AI analysis for this specific match
+                  # Generate AI analysis for this specific match
                 mensaje_openai = await generar_mensaje_openai(game_name, stats, participant, game_mode)
-                  # Create detailed embed for this match
+                
+                # Create detailed embed for this match
                 embed = await create_match_detail_embed(
-                    self.riot_id, participant, match_data, game_duration, mensaje_openai, match_index + 1
+                    self.riot_id, participant, match_data, game_duration, mensaje_openai, match_index + 1, self.summoner_profile
                 )
                 
                 await interaction.followup.send(embed=embed)
@@ -52,7 +53,7 @@ class MatchHistoryView(discord.ui.View):
         
         return match_callback
 
-async def create_match_detail_embed(riot_id: str, participant, match_data, game_duration, analysis_message: str, match_number: int):
+async def create_match_detail_embed(riot_id: str, participant, match_data, game_duration, analysis_message: str, match_number: int, summoner_profile=None):
     """Create detailed embed for a specific match"""
     game_name = parse_riot_id(riot_id)[0]
     
@@ -91,8 +92,7 @@ async def create_match_detail_embed(riot_id: str, participant, match_data, game_
         value=f"💰 **{gold:,}** oro | 👁️ **{vision_score}** visión | ⚔️ **{damage:,}** daño | 🗡️ **{cs}** CS",
         inline=False
     )
-    
-    # Truncate analysis message if too long
+      # Truncate analysis message if too long
     if len(analysis_message) > 1020:  # Leave margin for formatting
         analysis_message = analysis_message[:1017] + "..."
     
@@ -103,6 +103,12 @@ async def create_match_detail_embed(riot_id: str, participant, match_data, game_
     )
     
     embed.set_thumbnail(url=champion_icon_url)
+    
+    # Set summoner profile icon if available
+    if summoner_profile:
+        profile_icon_url = get_summoner_icon_url(summoner_profile['profileIconId'])
+        embed.set_author(name=f"Nivel {summoner_profile['summonerLevel']}", icon_url=profile_icon_url)
+    
     embed.set_footer(text="CapitanCoditos, Tu afk favorito.")
     
     return embed
@@ -120,12 +126,11 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str):
         if not match_results:
             await interaction.followup.send("❌ No se encontraron partidas recientes para este jugador.")
             return
-        
-        # Create main embed with match history
+          # Create main embed with match history
         embed = await create_match_history_embed(riot_id, match_results, summoner_profile)
         
         # Create view with clickable buttons
-        view = MatchHistoryView(riot_id, match_results)
+        view = MatchHistoryView(riot_id, match_results, summoner_profile)
         
         await interaction.followup.send(embed=embed, view=view)
         
