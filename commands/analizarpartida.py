@@ -79,7 +79,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         # Save summoner to database
         save_summoner(invocador)
         
-        participant, match_data, game_duration, game_name, stats, game_mode = await get_match_analysis_data(invocador)
+        participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(invocador)
         participants = match_data['info']['participants']
         
         # Get allies (same team as the player)

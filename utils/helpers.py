@@ -75,6 +75,10 @@ def get_champion_splash_url(champion_name, skin_num=0):
     champ_formatted = format_champion_name_for_url(champion_name)
     return f"https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champ_formatted}_{skin_num}.jpg"
 
+def get_summoner_icon_url(profile_icon_id, version="15.14.1"):
+    """Get summoner profile icon URL from Data Dragon API."""
+    return f"https://ddragon.leagueoflegends.com/cdn/{version}/img/profileicon/{profile_icon_id}.png"
+
 def get_match_result_info(participant):
     """Get match result and emoji."""
     resultado = "Victoria" if participant["win"] else "Derrota"
@@ -191,27 +195,27 @@ def encontrar_peor_jugador(participants):
 async def get_match_analysis_data(riot_id: str):
     """Get common match analysis data used by both commands"""
     get_player_match_data = _import_get_player_match_data()
-    participant, match_data, game_duration = await get_player_match_data(riot_id)
+    participant, match_data, game_duration, summoner_profile = await get_player_match_data(riot_id)
     game_name = parse_riot_id(riot_id)[0]
     
     stats = create_stats_dict(participant, game_duration)
     game_mode = match_data["info"]["gameMode"] or "Desconocido"
     
-    return participant, match_data, game_duration, game_name, stats, game_mode
+    return participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile
 
 async def create_ultima_partida_embed(riot_id: str):
     """Create a complete ultima partida embed with AI analysis"""
     # Get match data
-    participant, match_data, game_duration, game_name, stats, game_mode = await get_match_analysis_data(riot_id)
+    participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(riot_id)
     
     # Generate AI analysis
     generar_mensaje_openai = _import_generar_mensaje_openai()
     mensaje_openai = await generar_mensaje_openai(game_name, stats, participant, game_mode)
     
     # Create embed
-    return await create_match_analysis_embed(riot_id, participant, match_data, game_duration, mensaje_openai)
+    return await create_match_analysis_embed(riot_id, participant, match_data, game_duration, mensaje_openai, summoner_profile)
 
-async def create_match_history_embed(riot_id: str, match_results):
+async def create_match_history_embed(riot_id: str, match_results, summoner_profile=None):
     """Create embed showing multiple matches with summary"""
     game_name = parse_riot_id(riot_id)[0]
     
@@ -263,12 +267,17 @@ async def create_match_history_embed(riot_id: str, match_results):
         inline=False
     )
     
+    # Set summoner profile icon if available
+    if summoner_profile:
+        profile_icon_url = get_summoner_icon_url(summoner_profile['profileIconId'])
+        embed.set_author(name=f"Nivel {summoner_profile['summonerLevel']}", icon_url=profile_icon_url)
+    
     embed.set_footer(text="CapitanCoditos, Tu afk favorito. • Haz clic en una partida para ver el análisis detallado.")
     
     return embed
 
 # Discord utility functions
-async def create_match_analysis_embed(riot_id: str, participant, match_data, game_duration, analysis_message: str):
+async def create_match_analysis_embed(riot_id: str, participant, match_data, game_duration, analysis_message: str, summoner_profile=None):
     """Create a standardized Discord embed for match analysis"""
     game_name = parse_riot_id(riot_id)[0]
     
@@ -312,6 +321,12 @@ async def create_match_analysis_embed(riot_id: str, participant, match_data, gam
     )
     
     embed.set_thumbnail(url=champion_icon_url)
+    
+    # Set summoner profile icon if available
+    if summoner_profile:
+        profile_icon_url = get_summoner_icon_url(summoner_profile['profileIconId'])
+        embed.set_author(name=f"Nivel {summoner_profile['summonerLevel']}", icon_url=profile_icon_url)
+    
     embed.set_footer(text="CapitanCoditos, Tu afk favorito.")
     
     return embed

@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from riot.api import get_player_multiple_matches
-from utils.helpers import create_match_history_embed, create_ultima_partida_embed, handle_command_error, parse_riot_id, create_stats_dict, get_match_result_info, format_kda
+from utils.helpers import create_match_history_embed, create_ultima_partida_embed, handle_command_error, parse_riot_id, create_stats_dict, get_match_result_info, format_kda, get_summoner_icon_url
 from utils.autocomplete import riot_id_autocomplete
 from ai.openai_service import generar_mensaje_openai
 from database import save_summoner
@@ -114,15 +114,15 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str):
         # Save summoner to database
         save_summoner(riot_id)
         
-        # Get last 5 matches
-        match_results = await get_player_multiple_matches(riot_id, count=5)
+        # Get last 5 matches with summoner profile
+        match_results, summoner_profile = await get_player_multiple_matches(riot_id, count=5)
         
         if not match_results:
             await interaction.followup.send("❌ No se encontraron partidas recientes para este jugador.")
             return
         
         # Create main embed with match history
-        embed = await create_match_history_embed(riot_id, match_results)
+        embed = await create_match_history_embed(riot_id, match_results, summoner_profile)
         
         # Create view with clickable buttons
         view = MatchHistoryView(riot_id, match_results)
