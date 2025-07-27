@@ -13,9 +13,9 @@ A Discord bot that provides League of Legends match analysis using the Riot API 
 
 Here are some teaser images showcasing the bot's functionality:
 
-![Teaser Image 1](./assets/image.png)
+![Teaser Image 1](./app/assets/image.png)
 
-![Teaser Image 2](./assets/image%20copy.png)
+![Teaser Image 2](./app/assets/image%20copy.png)
 
 ## 🐳 Docker Hub
 
