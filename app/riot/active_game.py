@@ -5,7 +5,7 @@ from utils.helpers import make_riot_request, parse_riot_id
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
 
-def get_active_game_by_puuid(puuid, platforms=['la1', 'la2']):
+def get_active_game_by_puuid(puuid, platforms=['la1']):
     """
     Check if a summoner is currently in an active game using Spectator V5 API with PUUID.
     This is the correct solution since V5 accepts PUUID directly!

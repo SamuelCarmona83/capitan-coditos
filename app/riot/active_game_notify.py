@@ -350,11 +350,11 @@ async def notify_active_games_task(bot: discord.Client, channel_id: int):
                     await channel.send(msg)
             
             # Optional: notify when games end
-            # if finished_games:
-            #     print(f"[ActiveGameNotify] Players finished games: {finished_games}")
-            #     players_list = ', '.join([f"**{player}**" for player in finished_games])
-            #     msg = f'🏁 Amigos que terminaron partida: {players_list}'
-            #     await channel.send(msg)
+            if finished_games:
+                print(f"[ActiveGameNotify] Players finished games: {finished_games}")
+                players_list = ', '.join([f"**{player}**" for player in finished_games])
+                msg = f'🏁 Amigos que terminaron partida: {players_list}'
+                await channel.send(msg)
             
             if not new_in_game and not finished_games:
                 print(f"[ActiveGameNotify] No changes. Currently active: {len(current_active_ids)}")
