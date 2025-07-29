@@ -328,7 +328,9 @@ async def create_match_analysis_embed(riot_id: str, participant, match_data, gam
         "CLASSIC": "Grieta del Invocador",
         "ARAM": "ARAM",
         "URF": "Ultra Rapid Fire", 
-        "CHERRY": "Arena de Noxus"
+        "CHERRY": "Arena de Noxus",
+        "ULTBOOK": "Libro de Hechizos",
+        "DESCONOCIDO": "Desconocido"
     }
     game_mode_name = custom_game_modes.get(game_mode, game_mode)
 
