@@ -2,48 +2,40 @@
 import asyncio
 import discord
 import time
+import aiohttp
 from riot.api import get_summoner_data
 from riot.active_game import get_active_game_by_summoner_data
 from database.summoners import get_summoners_for_autocomplete
 
 CHECK_INTERVAL = 300  # Check every 5 minutes
 
-# Champion ID to name mapping (most common champions)
-CHAMPION_ID_TO_NAME = {
-    1: "Annie", 2: "Olaf", 3: "Galio", 4: "Twisted Fate", 5: "Xin Zhao",
-    6: "Urgot", 7: "LeBlanc", 8: "Vladimir", 9: "Fiddlesticks", 10: "Kayle",
-    11: "Master Yi", 12: "Alistar", 13: "Ryze", 14: "Sion", 15: "Sivir",
-    16: "Soraka", 17: "Teemo", 18: "Tristana", 19: "Warwick", 20: "Nunu & Willump",
-    21: "Miss Fortune", 22: "Ashe", 23: "Tryndamere", 24: "Jax", 25: "Morgana",
-    26: "Zilean", 27: "Singed", 28: "Evelynn", 29: "Twitch", 30: "Karthus",
-    31: "Cho'Gath", 32: "Amumu", 33: "Rammus", 34: "Anivia", 35: "Shaco",
-    36: "Dr. Mundo", 37: "Sona", 38: "Kassadin", 39: "Irelia", 40: "Janna",
-    41: "Gangplank", 42: "Corki", 43: "Karma", 44: "Taric", 45: "Veigar",
-    48: "Trundle", 50: "Swain", 51: "Caitlyn", 53: "Blitzcrank", 54: "Malphite",
-    55: "Katarina", 56: "Nocturne", 57: "Maokai", 58: "Renekton", 59: "Jarvan IV",
-    60: "Elise", 61: "Orianna", 62: "Wukong", 63: "Brand", 64: "Lee Sin",
-    67: "Vayne", 68: "Rumble", 69: "Cassiopeia", 72: "Skarner", 74: "Heimerdinger",
-    75: "Nasus", 76: "Nidalee", 77: "Udyr", 78: "Poppy", 79: "Gragas",
-    80: "Pantheon", 81: "Ezreal", 82: "Mordekaiser", 83: "Yorick", 84: "Akali",
-    85: "Kennen", 86: "Garen", 89: "Leona", 90: "Malzahar", 91: "Talon",
-    92: "Riven", 96: "Kog'Maw", 98: "Shen", 99: "Lux", 101: "Xerath",
-    102: "Shyvana", 103: "Ahri", 104: "Graves", 105: "Fizz", 106: "Volibear",
-    107: "Rengar", 110: "Varus", 111: "Nautilus", 112: "Viktor", 113: "Sejuani",
-    114: "Fiora", 115: "Ziggs", 117: "Lulu", 119: "Draven", 120: "Hecarim",
-    121: "Kha'Zix", 122: "Darius", 123: "Zyra", 126: "Jayce", 127: "Lissandra",
-    131: "Diana", 133: "Quinn", 134: "Syndra", 136: "Aurelion Sol", 141: "Kayn",
-    142: "Zoe", 143: "Zyra", 145: "Kai'Sa", 147: "Seraphine", 150: "Gnar",
-    154: "Zac", 157: "Yasuo", 161: "Vel'Koz", 163: "Taliyah", 164: "Camille",
-    166: "Akshan", 200: "Bel'Veth", 201: "Braum", 202: "Jhin", 203: "Kindred",
-    221: "Zeri", 222: "Jinx", 223: "Tahm Kench", 234: "Viego", 235: "Senna",
-    236: "Lucian", 238: "Zed", 240: "Kled", 245: "Ekko", 246: "Qiyana",
-    254: "Vi", 266: "Aatrox", 267: "Nami", 268: "Azir", 350: "Yuumi",
-    360: "Samira", 412: "Thresh", 420: "Illaoi", 421: "Rek'Sai", 427: "Ivern",
-    429: "Kalista", 432: "Bard", 516: "Ornn", 517: "Sylas", 518: "Neeko",
-    523: "Aphelios", 526: "Rell", 555: "Pyke", 777: "Yone", 875: "Sett",
-    876: "Lillia", 887: "Gwen", 888: "Renata Glasc", 895: "Nilah", 897: "K'Sante",
-    901: "Smolder", 902: "Ambessa", 910: "Hwei", 950: "Naafiri"
-}
+CHAMPION_ID_TO_NAME = None  # Will be loaded dynamically
+
+async def fetch_champion_id_to_name():
+    """Fetch champion ID to name mapping from Riot Data Dragon dynamically."""
+    global CHAMPION_ID_TO_NAME
+    if CHAMPION_ID_TO_NAME is not None:
+        return CHAMPION_ID_TO_NAME
+    
+    async with aiohttp.ClientSession() as session:
+        # 1. Get latest version
+        async with session.get('https://ddragon.leagueoflegends.com/api/versions.json') as resp:
+            versions = await resp.json()
+            latest_version = versions[0]
+        # 2. Get champion data
+        url = f'https://ddragon.leagueoflegends.com/cdn/{latest_version}/data/en_US/champion.json'
+        async with session.get(url) as resp:
+            data = await resp.json()
+        champ_data = data['data']
+        # 3. Build mapping from key (championId as string) to name
+        id_to_name = {int(info['key']): info['name'] for info in champ_data.values()}
+        CHAMPION_ID_TO_NAME = id_to_name
+        return id_to_name
+
+async def get_champion_name_by_id(champion_id):
+    """Get champion name from champion ID, fetching dynamically if needed."""
+    id_to_name = await fetch_champion_id_to_name()
+    return id_to_name.get(champion_id, f"Champion_{champion_id}")
 
 # Queue ID to game mode mapping
 QUEUE_ID_TO_MODE = {
@@ -71,10 +63,6 @@ QUEUE_ID_TO_MODE = {
     1900: "URF"
 }
 
-def get_champion_name_by_id(champion_id):
-    """Get champion name from champion ID"""
-    return CHAMPION_ID_TO_NAME.get(champion_id, f"Champion_{champion_id}")
-
 def get_game_mode_name(queue_id):
     """Get readable game mode name from queue ID"""
     return QUEUE_ID_TO_MODE.get(queue_id, f"Modo_{queue_id}")
@@ -97,34 +85,26 @@ def format_game_duration(game_start_time):
         minutes = duration_minutes % 60
         return f"{hours}h {minutes}min"
 
-def get_player_active_game_info(active_game, riot_id):
-    """Extract player-specific information from active game data"""
+async def get_player_active_game_info(active_game, riot_id):
+    """Extract player-specific information from active game data (async for dynamic champion fetch)"""
     if not active_game or 'participants' not in active_game:
         return None
     
-    # Find the specific player in the game
     game_name, tag_line = riot_id.split('#', 1)
-    
     for participant in active_game['participants']:
-        # Try to match by riot ID components
         if (participant.get('riotId') == riot_id or 
             participant.get('summonerName', '').lower() == game_name.lower()):
-            
             champion_id = participant.get('championId', 0)
-            champion_name = get_champion_name_by_id(champion_id)
-            
+            champion_name = await get_champion_name_by_id(champion_id)
             return {
                 'champion_name': champion_name,
                 'champion_id': champion_id,
                 'summoner_name': participant.get('summonerName', game_name)
             }
-    
-    # If exact match not found, return first participant (fallback)
     if active_game['participants']:
         participant = active_game['participants'][0]
         champion_id = participant.get('championId', 0)
-        champion_name = get_champion_name_by_id(champion_id)
-        
+        champion_name = await get_champion_name_by_id(champion_id)
         return {
             'champion_name': champion_name,
             'champion_id': champion_id,
@@ -270,7 +250,7 @@ async def notify_active_games_task(bot: discord.Client, channel_id: int):
                         duration = format_game_duration(game_start_time)
                         
                         # Get player-specific info (champion)
-                        player_info = get_player_active_game_info(active_game, riot_id)
+                        player_info = await get_player_active_game_info(active_game, riot_id)
                         
                         if player_info:
                             active_now[riot_id] = {
