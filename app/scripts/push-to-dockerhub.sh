@@ -1,20 +1,21 @@
 #!/bin/bash
 
 # Discord Bot Docker Hub Push Script
-# Usage: ./scripts/push-to-dockerhub.sh <your-dockerhub-username>
+# Usage: ./app/scripts/push-to-dockerhub.sh <tag>
+# You can run this script from anywhere in your project.
 
 set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Get the project root (parent directory of scripts)
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+# Get the project root (repo root, not just parent of scripts)
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || (cd "$SCRIPT_DIR/../.." && pwd))"
 
 # Check if tag is provided, otherwise use 'latest'
 if [ -z "$1" ]; then
     echo "ℹ️  No tag provided, using 'latest'"
-    echo "Usage: ./scripts/push-to-dockerhub.sh [tag]"
-    echo "Example: ./scripts/push-to-dockerhub.sh v1.0"
+    echo "Usage: ./app/scripts/push-to-dockerhub.sh [tag]"
+    echo "Example: ./app/scripts/push-to-dockerhub.sh v1.0"
 else
     echo "🏷️  Using tag: $1"
 fi

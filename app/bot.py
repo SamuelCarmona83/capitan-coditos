@@ -29,10 +29,10 @@ async def on_ready():
     print("\n🌐 Comandos sincronizados correctamente.")
 
     # Inicia la tarea de notificación de amigos en partida (ajusta el channel_id)
-    channel_id = int(os.getenv("NOTIFY_CHANNEL_ID", 1163478665917644903))
+    channel_id = int(os.getenv("NOTIFY_CHANNEL_ID"))
     if channel_id:
         asyncio.create_task(notify_active_games_task(client, channel_id))
     else:
-        print("[ActiveGameNotify] NOTIFY_CHANNEL_ID no configurado.")
+        print("[ActiveGameNotify] NOTIFY_CHANNEL_ID no configurado. add it to .env file 🤠")
 
 client.run(DISCORD_TOKEN)
