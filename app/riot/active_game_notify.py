@@ -197,24 +197,33 @@ async def check_bot_permissions(channel):
         print(f"[ActiveGameNotify] Error checking permissions: {e}")
         return False
 
-async def notify_active_games_task(bot: discord.Client, channel_id: int):
+async def notify_active_games_task(bot: discord.Client, channel_id: int = None, user_id: int = None):
     await bot.wait_until_ready()
-    channel = bot.get_channel(channel_id)
-    if channel is None:
-        print(f"[ActiveGameNotify] Channel ID {channel_id} not found.")
+    target = None
+    if channel_id is not None:
+        target = bot.get_channel(channel_id)
+        if target is None:
+            print(f"[ActiveGameNotify] Channel ID {channel_id} not found.")
+            return
+        # Check and log bot permissions in the channel
+        await check_bot_permissions(target)
+    elif user_id is not None:
+        try:
+            target = await bot.fetch_user(user_id)
+        except Exception as e:
+            print(f"[ActiveGameNotify] User ID {user_id} not found: {e}")
+            return
+    else:
+        print("[ActiveGameNotify] No channel_id or user_id provided.")
         return
-    
-    # Check and log bot permissions in the channel
-    await check_bot_permissions(channel)
-    
+
     last_active = set()
     consecutive_errors = {}
-    
+
     while not bot.is_closed():
         try:
             riot_ids = get_summoners_for_autocomplete(limit=100)
-            active_now = {}  # Changed to dict to store detailed info
-            
+            active_now = {}
             print(f"[ActiveGameNotify] === Checking {len(riot_ids)} players ===")
             
             for riot_id in riot_ids:
@@ -296,7 +305,7 @@ async def notify_active_games_task(bot: discord.Client, channel_id: int):
                     embed = await create_active_games_embed(new_players_info)
                     
                     if embed:
-                        await channel.send(embed=embed)
+                        await target.send(embed=embed)
                         print(f"[ActiveGameNotify] Sent detailed embed for {len(new_players_info)} players")
                     else:
                         raise Exception("Embed creation failed")
@@ -320,21 +329,21 @@ async def notify_active_games_task(bot: discord.Client, channel_id: int):
                         message_lines.append(f"• **{display_name}** jugando **{champion}** en {game_mode} ({duration})")
                     
                     msg = "\n".join(message_lines)
-                    await channel.send(msg)
+                    await target.send(msg)
                     
                 except Exception as e:
                     print(f"[ActiveGameNotify] Error sending embed notification: {e}")
                     # Final fallback to simple message
                     players_list = ', '.join([f"**{player}**" for player in new_in_game])
                     msg = f'🎮 Amigos que entraron en partida: {players_list}'
-                    await channel.send(msg)
+                    await target.send(msg)
             
             # Optional: notify when games end
             if finished_games:
                 print(f"[ActiveGameNotify] Players finished games: {finished_games}")
                 players_list = ', '.join([f"**{player}**" for player in finished_games])
                 msg = f'🏁 Amigos que terminaron partida: {players_list}'
-                await channel.send(msg)
+                await target.send(msg)
             
             if not new_in_game and not finished_games:
                 print(f"[ActiveGameNotify] No changes. Currently active: {len(current_active_ids)}")
