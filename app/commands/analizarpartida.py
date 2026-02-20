@@ -4,6 +4,12 @@ from utils.helpers import encontrar_peor_jugador, create_stats_dict, get_player_
 from utils.autocomplete import riot_id_autocomplete
 from ai.openai_service import generar_mensaje_openai
 from database import save_summoner
+from riot.api import REGION_MAP
+
+REGION_CHOICES = [
+    app_commands.Choice(name=region, value=region)
+    for region in REGION_MAP.keys()
+]
 
 def get_player_riot_id(participant):
     """Extract full Riot ID from participant data (Name#Tag format)"""
@@ -130,14 +136,14 @@ class TeamMemberView(discord.ui.View):
             )
         return disabled_callback
 
-async def analizar_partida(interaction: discord.Interaction, invocador: str):
+async def analizar_partida(interaction: discord.Interaction, invocador: str, region: str = "LAN"):
     await interaction.response.defer()
 
     try:
         # Save summoner to database
         save_summoner(invocador)
         
-        participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(invocador)
+        participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(invocador, region=region)
         
         # Import the validation function
         from utils.helpers import is_valid_match_for_analysis
@@ -253,8 +259,12 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str):
         await handle_command_error(interaction, e)
 
 def register_analizarpartida(tree):
-    @app_commands.describe(invocador="Tu nombre de invocador (ej: Roga#LAN)")
+    @app_commands.describe(
+        invocador="Tu nombre de invocador (ej: Roga#LAN)",
+        region="Región del servidor (default: LAN)"
+    )
+    @app_commands.choices(region=REGION_CHOICES)
     @app_commands.autocomplete(invocador=riot_id_autocomplete)
     @tree.command(name="analizarpartida", description="Analiza tu última partida y encuentra al peor jugador con un resumen divertido.")
-    async def command(interaction: discord.Interaction, invocador: str):
-        await analizar_partida(interaction, invocador)
+    async def command(interaction: discord.Interaction, invocador: str, region: str = "LAN"):
+        await analizar_partida(interaction, invocador, region)

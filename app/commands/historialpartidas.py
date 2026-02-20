@@ -1,10 +1,15 @@
 import discord
 from discord import app_commands
-from riot.api import get_player_multiple_matches
+from riot.api import get_player_multiple_matches, REGION_MAP
 from utils.helpers import create_match_history_embed, create_ultima_partida_embed, handle_command_error, parse_riot_id, create_stats_dict, get_match_result_info, format_kda, get_summoner_icon_url, is_valid_match_for_analysis
 from utils.autocomplete import riot_id_autocomplete
 from ai.openai_service import generar_mensaje_openai
 from database import save_summoner
+
+REGION_CHOICES = [
+    app_commands.Choice(name=region, value=region)
+    for region in REGION_MAP.keys()
+]
 
 class MatchHistoryView(discord.ui.View):
     def __init__(self, riot_id: str, match_results, summoner_profile=None):
@@ -189,7 +194,7 @@ async def create_match_detail_embed(riot_id: str, participant, match_data, game_
     
     return embed
 
-async def historial_partidas(interaction: discord.Interaction, riot_id: str):
+async def historial_partidas(interaction: discord.Interaction, riot_id: str, region: str = "LAN"):
     await interaction.response.defer()
 
     try:
@@ -197,7 +202,7 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str):
         save_summoner(riot_id)
         
         # Get last 5 matches with summoner profile
-        match_results, summoner_profile = await get_player_multiple_matches(riot_id, count=5)
+        match_results, summoner_profile = await get_player_multiple_matches(riot_id, count=5, region=region)
         
         if not match_results:
             await interaction.followup.send("❌ No se encontraron partidas recientes para este jugador.")
@@ -215,8 +220,12 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str):
         await handle_command_error(interaction, e)
 
 def register_historialpartidas(tree):
-    @app_commands.describe(riot_id="Tu Riot ID completo (ej: Roga#LAN)")
+    @app_commands.describe(
+        riot_id="Tu Riot ID completo (ej: Roga#LAN)",
+        region="Región del servidor (default: LAN)"
+    )
+    @app_commands.choices(region=REGION_CHOICES)
     @app_commands.autocomplete(riot_id=riot_id_autocomplete)
     @tree.command(name="historialpartidas", description="Consulta las últimas 5 partidas con análisis detallado de cada una.")
-    async def command(interaction: discord.Interaction, riot_id: str):
-        await historial_partidas(interaction, riot_id)
+    async def command(interaction: discord.Interaction, riot_id: str, region: str = "LAN"):
+        await historial_partidas(interaction, riot_id, region)

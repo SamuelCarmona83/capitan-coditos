@@ -60,7 +60,11 @@ QUEUE_ID_TO_MODE = {
     1300: "Nexus Blitz", 
     1400: "Ultimate Spellbook",
     1700: "Arena",
-    1900: "URF"
+    1900: "URF",
+    2000: "Tutorial 1",
+    2010: "Tutorial 2",
+    2020: "Tutorial 3",
+    2400: "ARAM Mayhem"  # ARAM Clash/Chaos mode
 }
 
 def get_game_mode_name(queue_id):
