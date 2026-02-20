@@ -181,14 +181,8 @@ async def matchups(interaction: discord.Interaction, riot_id: str, partidas: int
                         if len(parts) == 2:
                             platform = parts[0].lower()  # e.g., "la1" -> "la1"
                             numeric_id = parts[1]
-                            # Convert platform to region name for URL
-                            region_map = {
-                                "la1": "lan", "la2": "las", "na1": "na", "br1": "br",
-                                "euw1": "euw", "eun1": "eune", "tr1": "tr", "ru": "ru",
-                                "kr": "kr", "jp1": "jp", "oc1": "oce",
-                                "ph2": "ph", "sg2": "sg", "th2": "th", "tw2": "tw", "vn2": "vn"
-                            }
-                            region_code = region_map.get(platform, platform)
+                            # Convert platform to region name for URL using shared REGION_MAP
+                            region_code = REGION_MAP.get(platform, platform)
                             match_links.append(f"[G{len(match_links)+1}](https://www.leagueofgraphs.com/match/{region_code}/{numeric_id})")
                     
                     links_text = " | ".join(match_links) if match_links else ""

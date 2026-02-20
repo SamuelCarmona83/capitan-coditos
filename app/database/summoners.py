@@ -1,16 +1,15 @@
 import os
 from datetime import datetime
 from typing import List, Optional
-from .db import get_connection, is_postgres
+from .db import database_connection
 
 # Database file path (sqlite fallback)
 DB_PATH = os.path.join(os.path.dirname(__file__), 'summoners.db')
 
 def init_database():
     """Initialize the summoners database"""
-    conn = get_connection()
-    try:
-        if is_postgres(conn):
+    with database_connection() as (conn, is_pg):
+        if is_pg:
             with conn.cursor() as cur:
                 cur.execute('''
                     CREATE TABLE IF NOT EXISTS summoners (
@@ -37,8 +36,6 @@ def init_database():
                 )
             ''')
             conn.commit()
-    finally:
-        conn.close()
 
 def save_summoner(riot_id: str):
     """Save or update a summoner search"""
@@ -49,9 +46,8 @@ def save_summoner(riot_id: str):
         
         game_name, tag_line = riot_id.split('#', 1)
         
-        conn = get_connection()
-        try:
-            if is_postgres(conn):
+        with database_connection() as (conn, is_pg):
+            if is_pg:
                 with conn.cursor() as cur:
                     cur.execute('''
                         UPDATE summoners 
@@ -79,17 +75,14 @@ def save_summoner(riot_id: str):
                     ''', (riot_id, game_name, tag_line))
                 
                 conn.commit()
-        finally:
-            conn.close()
     except Exception as e:
         print(f"Error saving summoner {riot_id}: {e}")
 
 def get_summoners_for_autocomplete(query: str = "", limit: int = 10) -> List[str]:
     """Get summoners for autocomplete, ordered by search frequency and recency"""
     try:
-        conn = get_connection()
-        try:
-            if is_postgres(conn):
+        with database_connection() as (conn, is_pg):
+            if is_pg:
                 with conn.cursor() as cur:
                     if query:
                         cur.execute('''
@@ -124,8 +117,6 @@ def get_summoners_for_autocomplete(query: str = "", limit: int = 10) -> List[str
                 
                 results = [row[0] for row in cursor.fetchall()]
                 return results
-        finally:
-            conn.close()
     except Exception as e:
         print(f"Error getting summoners for autocomplete: {e}")
         import traceback
@@ -135,9 +126,8 @@ def get_summoners_for_autocomplete(query: str = "", limit: int = 10) -> List[str
 def get_summoner_stats() -> dict:
     """Get database statistics"""
     try:
-        conn = get_connection()
-        try:
-            if is_postgres(conn):
+        with database_connection() as (conn, is_pg):
+            if is_pg:
                 with conn.cursor() as cur:
                     cur.execute('SELECT COUNT(*), SUM(search_count) FROM summoners')
                     result = cur.fetchone()
@@ -146,8 +136,6 @@ def get_summoner_stats() -> dict:
                 cursor = conn.execute('SELECT COUNT(*), SUM(search_count) FROM summoners')
                 result = cursor.fetchone()
                 total_summoners, total_searches = result
-        finally:
-            conn.close()
         
         # Forzar a int para evitar errores si vienen como str
         try:

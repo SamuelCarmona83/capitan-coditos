@@ -32,7 +32,7 @@ def get_region_routing(region: str = None):
     """Get (routing_value, platform_id) for a region. Defaults to LAN."""
     region = (region or DEFAULT_REGION).upper()
     if region not in REGION_MAP:
-        raise ValueError(f"Región no válida: `{region}`. Regiones disponibles: {', '.join(REGION_MAP.keys())}")
+        raise ValueError(f"Invalid region: {region}. Available regions: {', '.join(REGION_MAP.keys())}")
     return REGION_MAP[region]
 
 def get_summoner_data(game_name, tag_line, region=None):

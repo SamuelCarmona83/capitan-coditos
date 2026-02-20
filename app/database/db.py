@@ -2,6 +2,7 @@ import os
 import sqlite3
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from contextlib import contextmanager
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'summoners.db')
 
@@ -23,6 +24,22 @@ def get_connection():
             return sqlite3.connect(DB_PATH)
     else:
         return sqlite3.connect(DB_PATH)
+
+@contextmanager
+def database_connection():
+    """Context manager for database connections.
+    
+    Yields (conn, is_pg) tuple where:
+    - conn: database connection
+    - is_pg: True if PostgreSQL, False if SQLite
+    
+    Automatically closes connection on exit.
+    """
+    conn = get_connection()
+    try:
+        yield conn, is_postgres(conn)
+    finally:
+        conn.close()
 
 def dict_from_row(row, cursor):
     # Get DB_TYPE at runtime

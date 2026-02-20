@@ -23,14 +23,6 @@ async def on_ready():
     # Sync globally
     await tree.sync()
     
-    # Also sync to each guild for instant propagation
-    for guild in client.guilds:
-        try:
-            tree.copy_global_to(guild=guild)
-            await tree.sync(guild=guild)
-        except Exception as e:
-            print(f"⚠️ Error syncing to guild {guild.name}: {e}")
-    
     print(f"✅ Bot conectado como {client.user}")
 
     cmds = await tree.fetch_commands()
