@@ -221,10 +221,10 @@ def encontrar_peor_jugador(participants):
     return peor_nombre, peor_partida, scores[peor_nombre]
 
 # Common match analysis functions
-async def get_match_analysis_data(riot_id: str):
+async def get_match_analysis_data(riot_id: str, region=None):
     """Get common match analysis data used by both commands"""
     get_player_match_data = _import_get_player_match_data()
-    participant, match_data, game_duration, summoner_profile = await get_player_match_data(riot_id)
+    participant, match_data, game_duration, summoner_profile = await get_player_match_data(riot_id, region=region)
     game_name = parse_riot_id(riot_id)[0]
     
     stats = create_stats_dict(participant, game_duration)
@@ -232,10 +232,10 @@ async def get_match_analysis_data(riot_id: str):
     
     return participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile
 
-async def create_ultima_partida_embed(riot_id: str):
+async def create_ultima_partida_embed(riot_id: str, region=None):
     """Create a complete ultima partida embed with AI analysis"""
     # Get match data
-    participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(riot_id)
+    participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(riot_id, region=region)
     
     # Check if match is valid for analysis
     if not is_valid_match_for_analysis(match_data, participant):

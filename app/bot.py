@@ -19,7 +19,10 @@ tree = app_commands.CommandTree(client)
 @client.event
 async def on_ready():
     register_commands(tree)
+    
+    # Sync globally
     await tree.sync()
+    
     print(f"✅ Bot conectado como {client.user}")
 
     cmds = await tree.fetch_commands()

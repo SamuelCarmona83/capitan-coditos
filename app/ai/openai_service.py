@@ -37,12 +37,11 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
         multikill_analysis = f" | Pentakills: `{participant.get('pentaKills', 0)}` (¡Bien hecho!)"
 
     prompt = f"""
-    Actúa como un entrenador de League of Legends brutalmente honesto y sarcástico.
+    Actúa como un entrenador de League of Legends apasionado y motivador.
     Genera un mensaje corto (máximo 2 oraciones) y directo usando el formato de texto de Discord:
     - Usa **negrita** para énfasis
     - Usa *cursiva* para términos de juego
     - Usa __subrayado__ para nombres
-    - Usa ~~tachado~~ para errores o fallos
     - Usa `código` para números o estadísticas
 
     Estadísticas del jugador:
@@ -66,15 +65,15 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
     Ten en cuenta estos otros detalles del jugador:
     - Campeón: `{participant.get('championName', 'N/A')}` (si está disponible)
     - Visión: `{vision_analysis}` 
-    - Oro: `{stats.get('goldEarned', 'N/A')}` si es bajo dile "pelabolas", lo normal es más de 10k.
-    - Nivel: `{stats.get('champLevel', 'N/A')}` si es bajo dile, menor que 14, "Traiganle una falda a la niña"
+    - Oro: `{stats.get('goldEarned', 'N/A')}` (lo normal es más de 10k).
+    - Nivel: `{stats.get('champLevel', 'N/A')}` (nivel esperado al final: 14+).
     - {multikill_analysis}
 
-    Escribe un mensaje breve (máximo 2 oraciones ni mas ni menos), mencionando específicamente sus estadísticas. tambien le pudes decir casual.
-    Haz comentarios pasivo agresivos como "Tienes una increible habilidad casi pareces Plata II" o "Eres un genio del LoL, deberías estar en Challenger"
-    Si el jugador tuvo un buen desempeño, evalúa objetivamente su actuación y el campeón/rol jugado.
-    Si el jugador tuvo un mal desempeño, utiliza un tono sarcástico y directo, como "Con ese KDA, deberías estar jugando en la liga de los bots" o "Tienes una increíble habilidad, casi pareces Plata II".
-    Si puedes utiliza manera de hablar latinoamerica, coloquialismos que oscilen entre los diferentes paises de la region ( recuerda máximo 2 oraciones).
+    Escribe un mensaje breve (máximo 2 oraciones), mencionando específicamente sus estadísticas.
+    Si el jugador tuvo un buen desempeño, celebra sus logros con entusiasmo y destaca lo que hizo bien.
+    Si el jugador tuvo un desempeño con margen de mejora, da un consejo constructivo y motivador sobre qué mejorar,
+    sin hacer suposiciones negativas sobre el jugador como persona.
+    Usa coloquialismos latinoamericanos para hacerlo amigable y cercano (máximo 2 oraciones).
     """
 
     response = await openai_client.chat.completions.create(
@@ -82,14 +81,167 @@ async def generar_mensaje_openai(nombre, stats, participant=None, game_mode="Des
         messages=[
             {
                 "role": "system",
-                "content": "Eres un jugador de LoL con humor ácido, opiniones fuertes y objetividad si el desempeño fue decente."
+                "content": "Eres un coach de LoL con buen humor, que celebra los buenos desempeños y da consejos de mejora constructivos cuando hay áreas a trabajar. Nunca haces suposiciones negativas sobre el jugador."
             },
             {
                 "role": "user",
-                "content": prompt + "\n\nSi el jugador realizó una buena actuación, evalúa objetivamente su desempeño. Y el campeon/rol jugado."
+                "content": prompt + "\n\nEvalúa objetivamente el desempeño del jugador según su rol y campeón, destacando logros o áreas de mejora concretas."
             }
         ],
         #temperature=0.8
+    )
+
+    return response.choices[0].message.content.strip()
+
+async def generar_analisis_matchups(nombre, worst_matchups, general_stats):
+    """Generate AI analysis of a player's worst matchups and weaknesses."""
+    
+    # Build matchup details string
+    matchup_details = ""
+    for i, (champ, data) in enumerate(worst_matchups[:10], 1):
+        wr = (data["wins"] / data["games"]) * 100
+        avg_deaths = data["deaths"] / data["games"]
+        avg_kda = (data["kills"] + data["assists"]) / max(1, data["deaths"])
+        picks = ", ".join([
+            f"{c} ({d['games']}j, {(d['wins']/d['games'])*100:.0f}%WR)"
+            for c, d in sorted(data["player_champions"].items(), key=lambda x: x[1]["games"], reverse=True)[:3]
+        ])
+        matchup_details += (
+            f"{i}. vs {champ}: {data['wins']}W/{data['losses']}L ({wr:.0f}% WR), "
+            f"KDA prom: {avg_kda:.1f}, Muertes prom: {avg_deaths:.1f}, "
+            f"Picks usados: {picks}\n"
+        )
+    
+    roles_text = ", ".join([f"{role}: {count}" for role, count in general_stats['roles_played'].items()])
+    
+    # Build nemesis info if available
+    nemesis_text = ""
+    killers = general_stats.get("killers", {})
+    if killers:
+        sorted_killers = sorted(
+            [(champ, d) for champ, d in killers.items() if d["games_against"] >= 2],
+            key=lambda x: x[1]["enemy_kills_total"] / x[1]["games_against"],
+            reverse=True
+        )[:5]
+        if sorted_killers:
+            nemesis_text = "\n    **Némesis (campeones que más lo matan):**\n"
+            for champ, d in sorted_killers:
+                avg_kills = d["enemy_kills_total"] / d["games_against"]
+                avg_deaths = d["player_deaths_in_games"] / d["games_against"]
+                nemesis_text += f"    - {champ}: promedio {avg_kills:.1f} kills por partida en {d['games_against']} juegos (jugador muere {avg_deaths:.1f} veces promedio)\n"
+    
+    prompt = f"""
+    Actúa como un analista/coach de League of Legends apasionado que ayuda a los jugadores a mejorar.
+    Analiza los matchups más difíciles de un jugador y da consejos concretos para superarlos.
+
+    **Jugador:** {nombre}
+    **Estadísticas generales:** {general_stats['total_analyzed']} partidas ranked analizadas, {general_stats['win_rate']:.1f}% WR general
+    **Roles jugados:** {roles_text}
+
+    **Matchups más difíciles (ordenados por winrate, mínimo 2 partidas):**
+    {matchup_details}
+    {nemesis_text}
+    Genera un análisis de máximo 4-5 oraciones en español con estas reglas:
+    1. Identifica el PATRÓN: ¿hay un tipo de campeón que le cuesta (asesinos, tanques, poke, bruisers)?
+    2. Menciona sus picks más usados contra esos campeones y si hay una mejor alternativa
+    3. Da UN consejo práctico y directo (banear algo, cambiar de pick, mejorar spacing, etc.)
+    4. Si hay un matchup con 0% WR en varias partidas, destácalo como un área clave a trabajar
+    5. Si hay datos de némesis, menciona al campeón que más le cuesta y sugiere cómo prepararse contra él
+
+    Usa formato Discord: **negrita**, *cursiva*, `código` para stats, __subrayado__ para énfasis.
+    Usa coloquialismos latinoamericanos para hacerlo cercano y motivador.
+    Sé directo y constructivo - el objetivo es ayudar al jugador a identificar qué trabajar.
+    """
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {
+                "role": "system",
+                "content": "Eres un analista de LoL que identifica patrones en los matchups difíciles de un jugador y da consejos prácticos para mejorar. Hablas como latino con buen ánimo."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+    )
+
+    return response.choices[0].message.content.strip()
+
+async def generar_analisis_worst_games(nombre, worst_games, general_stats):
+    """Generate AI analysis of a player's worst performances and patterns."""
+    
+    # Build worst games details
+    games_details = ""
+    for i, game in enumerate(worst_games[:10], 1):
+        result = "Victoria" if game["won"] else "Derrota"
+        games_details += (
+            f"{i}. {game['champion']} ({game['position']}) - {result}: "
+            f"{game['kills']}/{game['deaths']}/{game['assists']} (KDA {game['kda']:.2f}), "
+            f"KP: {game['kill_participation']:.0f}%, Score: {game['score']:.1f}/100\n"
+        )
+    
+    roles_text = ", ".join([f"{role}: {count}" for role, count in general_stats['roles_played'].items()])
+    
+    # Identify patterns
+    worst_champions = {}
+    worst_roles = {}
+    total_deaths_in_worst = 0
+    losses_in_worst = 0
+    
+    for game in worst_games:
+        champ = game["champion"]
+        role = game["position"]
+        worst_champions[champ] = worst_champions.get(champ, 0) + 1
+        worst_roles[role] = worst_roles.get(role, 0) + 1
+        total_deaths_in_worst += game["deaths"]
+        if not game["won"]:
+            losses_in_worst += 1
+    
+    most_common_champ = max(worst_champions.items(), key=lambda x: x[1])[0] if worst_champions else "N/A"
+    most_common_role = max(worst_roles.items(), key=lambda x: x[1])[0] if worst_roles else "N/A"
+    avg_deaths_worst = total_deaths_in_worst / len(worst_games)
+    
+    prompt = f"""
+    Actúa como un analista/coach de League of Legends que ayuda al jugador a identificar áreas de mejora.
+    Analiza las 10 partidas con menor rendimiento de un jugador en sus últimas {general_stats['total_analyzed']} ranked.
+
+    **Jugador:** {nombre}
+    **Estadísticas generales:** {general_stats['total_analyzed']} partidas analizadas, {general_stats['win_rate']:.1f}% WR
+    **Promedios:** KDA {general_stats['avg_kda']:.2f}, {general_stats['avg_deaths']:.1f} muertes/game
+    **Roles jugados:** {roles_text}
+
+    **Las 10 partidas con menor puntaje de rendimiento:**
+    {games_details}
+
+    **Patrones identificados:**
+    - Campeón más presente en los juegos difíciles: {most_common_champ}
+    - Rol con más margen de mejora: {most_common_role}
+    - Muertes promedio en estos juegos: {avg_deaths_worst:.1f} (vs {general_stats['avg_deaths']:.1f} general)
+    - Derrotas en las 10 partidas analizadas: {losses_in_worst}/10
+
+    Genera un análisis CORTO de máximo 2-3 oraciones en español:
+    1. Identifica el PATRÓN más relevante (campeón/rol con más margen de mejora, muchas muertes)
+    2. Da UN consejo específico y práctico orientado a mejorar
+    3. Sé directo y constructivo, sin hacer juicios negativos sobre el jugador
+
+    Usa formato Discord: **negrita** para énfasis y `código` para stats.
+    Usa coloquialismos latinos. Máximo 3 oraciones.
+    """
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {
+                "role": "system",
+                "content": "Eres un analista de LoL que identifica patrones de mejora en el rendimiento de un jugador y da consejos constructivos. Hablas como latino con buen ánimo."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
     )
 
     return response.choices[0].message.content.strip()
