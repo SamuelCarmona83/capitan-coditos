@@ -103,7 +103,7 @@ async def matchups(interaction: discord.Interaction, riot_id: str, partidas: int
 
         # Create embed
         embed = discord.Embed(
-            title=f"💀 Peores Matchups de {riot_id}",
+            title=f"� Matchups a Trabajar de {riot_id}",
             description=(
                 f"📊 **{general_stats['total_analyzed']}** partidas ranked analizadas "
                 f"(de {general_stats['total_fetched']} obtenidas) | "
@@ -116,7 +116,7 @@ async def matchups(interaction: discord.Interaction, riot_id: str, partidas: int
         if len(matchup_text) > 1020:
             matchup_text = matchup_text[:1017] + "..."
         embed.add_field(
-            name=f"🎯 Top 10 Peores Matchups ({min_games_label}):",
+            name=f"🎯 Matchups más difíciles ({min_games_label}):",
             value=matchup_text if matchup_text else "No hay suficientes datos",
             inline=False
         )
@@ -125,7 +125,7 @@ async def matchups(interaction: discord.Interaction, riot_id: str, partidas: int
         if len(ai_analysis) > 1020:
             ai_analysis = ai_analysis[:1017] + "..."
         embed.add_field(
-            name="🤖 Análisis de debilidades:",
+            name="🤖 Análisis de matchups:",
             value=ai_analysis,
             inline=False
         )
@@ -240,7 +240,7 @@ def register_matchups(tree):
     @app_commands.autocomplete(riot_id=riot_id_autocomplete)
     @tree.command(
         name="matchups",
-        description="Analiza tus peores matchups en ranked para encontrar tus debilidades 💀"
+        description="Analiza tus matchups más difíciles en ranked para identificar áreas de mejora 📈"
     )
     async def command(interaction: discord.Interaction, riot_id: str, partidas: int = 50, region: str = "LAN"):
         await matchups(interaction, riot_id, partidas, region)

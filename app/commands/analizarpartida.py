@@ -208,7 +208,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str, reg
         )
         
         embed.add_field(
-            name=f"Jugador mas vegano: {peor_nombre} ({peor_champion})",
+            name=f"Jugador con más margen de mejora: {peor_nombre} ({peor_champion})",
             value=f"Modo de juego: {game_mode_name}",
             inline=False
         )
@@ -236,7 +236,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str, reg
             mensaje = mensaje[:1017] + "..."
         
         embed.add_field(
-            name="Análisis del mas mocho:",
+            name="Análisis y consejos de mejora:",
             value=mensaje,
             inline=False
         )
@@ -265,6 +265,6 @@ def register_analizarpartida(tree):
     )
     @app_commands.choices(region=REGION_CHOICES)
     @app_commands.autocomplete(invocador=riot_id_autocomplete)
-    @tree.command(name="analizarpartida", description="Analiza tu última partida y encuentra al peor jugador con un resumen divertido.")
+    @tree.command(name="analizarpartida", description="Analiza el rendimiento de tu equipo en la última partida y recibe consejos de mejora.")
     async def command(interaction: discord.Interaction, invocador: str, region: str = "LAN"):
         await analizar_partida(interaction, invocador, region)

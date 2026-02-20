@@ -43,9 +43,9 @@ async def worstgames(interaction: discord.Interaction, riot_id: str, partidas: i
         role_filter = None if rol == "ALL" else rol
         role_text = f" (solo {rol})" if role_filter else ""
         progress_msg = await interaction.followup.send(
-            f"🔍 Analizando las **peores performances** de **{riot_id}** ({region}){role_text} "
+            f"🔍 Analizando el **rendimiento** de **{riot_id}** ({region}){role_text} "
             f"en las últimas **{partidas}** partidas ranked...\n"
-            f"⏳ Tiempo estimado: **~{estimated_time} minutos**. Calculando scores de performance...",
+            f"⏳ Tiempo estimado: **~{estimated_time} minutos**. Calculando scores de rendimiento...",
             wait=True
         )
 
@@ -79,7 +79,7 @@ async def worstgames(interaction: discord.Interaction, riot_id: str, partidas: i
         # Build embed
         role_title = f" ({role_filter})" if role_filter else ""
         embed = discord.Embed(
-            title=f"💀 Peores Performances de {riot_id}{role_title}",
+            title=f"� Análisis de Rendimiento de {riot_id}{role_title}",
             description=(
                 f"📊 **{general_stats['total_analyzed']}** partidas analizadas{role_text} "
                 f"(de {general_stats['total_fetched']} obtenidas) | "
@@ -130,7 +130,7 @@ async def worstgames(interaction: discord.Interaction, riot_id: str, partidas: i
             games_text = games_text[:1017] + "..."
         
         embed.add_field(
-            name="🎯 Top 10 Peores Partidas (menor score = peor performance):",
+            name="🎯 Top 10 Partidas con Menor Rendimiento (score más bajo = más margen de mejora):",
             value=games_text if games_text else "No hay datos",
             inline=False
         )
@@ -139,7 +139,7 @@ async def worstgames(interaction: discord.Interaction, riot_id: str, partidas: i
         if len(ai_analysis) > 1020:
             ai_analysis = ai_analysis[:1017] + "..."
         embed.add_field(
-            name="🤖 Análisis de patrones destructivos:",
+            name="🤖 Análisis de patrones y áreas a mejorar:",
             value=ai_analysis,
             inline=False
         )
@@ -192,7 +192,7 @@ def register_worstgames(tree: app_commands.CommandTree):
     @app_commands.autocomplete(riot_id=riot_id_autocomplete)
     @tree.command(
         name="worstgames",
-        description="Analiza las 10 peores performances de un jugador en ranked 💀"
+        description="Analiza las partidas con menor rendimiento de un jugador en ranked 📈"
     )
     async def command(interaction: discord.Interaction, riot_id: str, partidas: int = 250, region: str = "LAN", rol: str = "ALL"):
         await worstgames(interaction, riot_id, partidas, region, rol)
