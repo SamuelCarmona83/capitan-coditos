@@ -37,6 +37,7 @@ QUEUE_ID_TO_MODE = {
     440: "Ranked Flex",   450: "ARAM",              700: "Clash",
     900: "URF",           1020: "One for All",      1300: "Nexus Blitz",
     1400: "Ultimate Spellbook", 1700: "Arena", 1900: "URF",
+    2400: "ARAM: Caos",
 }
 
 
