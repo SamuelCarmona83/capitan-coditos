@@ -1,16 +1,30 @@
 import asyncio
+import json
 import os
+from datetime import datetime, timezone
 
 from tasks.celery_app import celery_app
 from database.mongo import init_mongo
 from database.match_cache import init_redis
 
 SYNC_COUNT = 250
+PROGRESS_KEY = "sync:progress"
 
 
 def _ensure_connections():
     init_mongo(os.getenv("MONGO_URL", "mongodb://mongo:27017"), os.getenv("MONGO_DB", "capitancoditos"))
     init_redis(os.getenv("REDIS_URL", "redis://redis:6379/0"))
+
+
+def _set_progress(r, **fields):
+    """Merge fields into the progress hash stored in Redis."""
+    try:
+        existing = r.get(PROGRESS_KEY)
+        data = json.loads(existing) if existing else {}
+        data.update(fields)
+        r.setex(PROGRESS_KEY, 3600, json.dumps(data))
+    except Exception:
+        pass
 
 
 @celery_app.task(name="tasks.sync_all_matches.sync_all_matches")
@@ -34,11 +48,19 @@ def sync_all_matches():
         from services.match_logic import parse_riot_id
 
         summoner_pairs = get_summoners_with_region(200)
-        print(f"[sync] Starting 250-match sync for {len(summoner_pairs)} summoners")
+        total = len(summoner_pairs)
+        print(f"[sync] Starting 250-match sync for {total} summoners")
         new_stored = 0
         errors = 0
 
-        for riot_id, region, _ts in summoner_pairs:
+        from database.match_cache import _redis
+        r = _redis()
+        _set_progress(r, status="running", current=0, total=total,
+                      new_matches=0, errors=0, current_summoner="",
+                      started_at=datetime.now(timezone.utc).isoformat())
+
+        for idx, (riot_id, region, _ts) in enumerate(summoner_pairs, 1):
+            _set_progress(r, current=idx, current_summoner=riot_id, new_matches=new_stored, errors=errors)
             try:
                 cached = get_summoner_profile(riot_id)
                 if cached:
@@ -75,6 +97,8 @@ def sync_all_matches():
                 errors += 1
                 print(f"[sync] Error processing {riot_id}: {exc}")
 
+        _set_progress(r, status="done", current=total, new_matches=new_stored, errors=errors,
+                      current_summoner="", finished_at=datetime.now(timezone.utc).isoformat())
         print(f"[sync] Done. New matches stored: {new_stored}, errors: {errors}")
 
     asyncio.get_event_loop().run_until_complete(_run())

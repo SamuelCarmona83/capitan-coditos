@@ -183,3 +183,14 @@ def upsert_summoner():
 def db_stats():
     """Returns { total_summoners, total_searches }."""
     return jsonify(get_summoner_stats())
+
+
+@db_bp.get("/sync-progress")
+def sync_progress():
+    """Returns current sync task progress stored in Redis."""
+    import json
+    from database.match_cache import _redis
+    raw = _redis().get("sync:progress")
+    if not raw:
+        return jsonify({"status": "idle"})
+    return jsonify(json.loads(raw))
