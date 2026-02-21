@@ -12,6 +12,81 @@ from database.summoners import (
 db_bp = Blueprint("db", __name__)
 
 
+@db_bp.get("/matches")
+def cached_matches():
+    riot_id = request.args.get("riot_id")
+    if not riot_id:
+        return jsonify({"error": "riot_id is required"}), 400
+    count = min(int(request.args.get("count", 20)), 100)
+    from database.match_cache import get_summoner_profile, get_cached_matches_for_puuid
+    profile = get_summoner_profile(riot_id)
+    if not profile:
+        return jsonify({"riot_id": riot_id, "matches": []})
+    matches = get_cached_matches_for_puuid(profile["puuid"], count)
+    return jsonify({"riot_id": riot_id, "matches": matches})
+
+
+@db_bp.get("/match/<match_id>")
+def cached_match_detail(match_id: str):
+    riot_id = request.args.get("riot_id")
+    from database.match_cache import get_match
+    from services.match_logic import create_stats_dict, get_player_name, get_game_mode_label
+    data = get_match(match_id)
+    if not data:
+        return jsonify({"error": "Match not in cache"}), 404
+
+    info = data["info"]
+    participants = info["participants"]
+
+    focused = None
+    if riot_id:
+        from database.match_cache import get_summoner_profile
+        profile = get_summoner_profile(riot_id)
+        if profile:
+            puuid = profile["puuid"]
+            focused = next((p for p in participants if p.get("puuid") == puuid), None)
+
+    game_duration = info["gameDuration"]
+    game_mode = info.get("gameMode", "")
+
+    def slim(p):
+        return {
+            "name": get_player_name(p),
+            "champion": p.get("championName", ""),
+            "kills": p["kills"],
+            "deaths": p["deaths"],
+            "assists": p["assists"],
+            "win": p["win"],
+            "teamId": p["teamId"],
+            "totalDamageDealtToChampions": p.get("totalDamageDealtToChampions", 0),
+            "teamPosition": p.get("teamPosition", ""),
+            "puuid": p.get("puuid", ""),
+        }
+
+    return jsonify({
+        "match_id": match_id,
+        "game_mode": game_mode,
+        "game_mode_label": get_game_mode_label(game_mode),
+        "game_duration": game_duration,
+        "game_creation": info.get("gameCreation", 0),
+        "participants": [slim(p) for p in participants],
+        "focused_stats": create_stats_dict(focused, game_duration) if focused else None,
+        "focused_participant": slim(focused) if focused else None,
+    })
+
+
+@db_bp.get("/summoner-stats")
+def summoner_stats():
+    riot_id = request.args.get("riot_id")
+    if not riot_id:
+        return jsonify({"error": "riot_id is required"}), 400
+    from database.match_cache import get_summoner_profile, get_summoner_match_stats
+    profile = get_summoner_profile(riot_id)
+    if not profile:
+        return jsonify({"riot_id": riot_id, "total": 0, "top_champions": [], "by_mode": {}})
+    return jsonify({"riot_id": riot_id, **get_summoner_match_stats(profile["puuid"])})
+
+
 @db_bp.get("/summoners/autocomplete")
 def autocomplete():
     """

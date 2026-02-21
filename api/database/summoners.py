@@ -25,18 +25,21 @@ def save_summoner(riot_id: str, region: str = None, puuid: str = None):
         set_fields["region"] = region.upper()
     if puuid:
         set_fields["puuid"] = puuid
+    set_on_insert: dict = {
+        "_id": riot_id,
+        "game_name": game_name,
+        "tag_line": tag_line,
+        "created_at": datetime.now(timezone.utc),
+    }
+    # only set region on insert when not already being set via $set to avoid path conflict
+    if not region:
+        set_on_insert["region"] = "LAN"
     db["summoners"].update_one(
         {"_id": riot_id},
         {
             "$set": set_fields,
             "$inc": {"search_count": 1},
-            "$setOnInsert": {
-                "_id": riot_id,
-                "game_name": game_name,
-                "tag_line": tag_line,
-                "region": (region.upper() if region else "LAN"),
-                "created_at": datetime.now(timezone.utc),
-            },
+            "$setOnInsert": set_on_insert,
         },
         upsert=True,
     )

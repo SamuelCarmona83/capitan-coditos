@@ -1,7 +1,7 @@
 """
 Capitán Coditos – Flask API
 """
-from flask import Flask
+from flask import Flask, render_template
 from flask_cors import CORS
 
 from config import Config
@@ -32,6 +32,10 @@ def create_app(config: Config = None) -> Flask:
     app.register_blueprint(tasks_bp, url_prefix="/api/tasks")
     app.register_blueprint(ai_bp, url_prefix="/api/ai")
     app.register_blueprint(db_bp, url_prefix="/api/db")
+
+    @app.get("/")
+    def index():
+        return render_template("index.html")
 
     return app
 

@@ -15,6 +15,7 @@ celery_app = Celery(
         "tasks.worst_games",
         "tasks.prefetch",
         "tasks.duration_stats",
+        "tasks.sync_all_matches",
     ],
 )
 
@@ -32,6 +33,10 @@ celery_app.conf.update(
         "prefetch-matches": {
             "task": "tasks.prefetch.prefetch_matches",
             "schedule": crontab(minute=f"*/{PREFETCH_INTERVAL}"),
+        },
+        "sync-all-matches": {
+            "task": "tasks.sync_all_matches.sync_all_matches",
+            "schedule": crontab(hour=3, minute=0),
         },
     },
 )

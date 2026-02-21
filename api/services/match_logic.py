@@ -49,6 +49,7 @@ _CHAMPION_SPECIAL_CASES = {
     "Rek'Sai": "RekSai",
     "Renata Glasc": "Renata",
     "Bel'Veth": "Belveth",
+    "FiddleSticks": "Fiddlesticks",
 }
 
 

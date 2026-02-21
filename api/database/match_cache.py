@@ -125,3 +125,117 @@ def get_cached_match_ids_for_puuid(puuid: str) -> set:
         {"_id": 1},
     )
     return {doc["_id"] for doc in docs}
+
+
+def get_cached_matches_for_puuid(puuid: str, count: int = 20) -> list:
+    db = get_db()
+    docs = (
+        db["matches"]
+        .find(
+            {"data.metadata.participants": puuid},
+            {"_id": 1, "data.info.participants": 1, "data.info.gameMode": 1,
+             "data.info.queueId": 1, "data.info.gameDuration": 1, "data.info.gameCreation": 1},
+        )
+        .sort("data.info.gameCreation", -1)
+        .limit(count)
+    )
+    result = []
+    for doc in docs:
+        info = doc["data"]["info"]
+        p = next((x for x in info["participants"] if x.get("puuid") == puuid), None)
+        if not p:
+            continue
+        result.append({
+            "match_id": doc["_id"],
+            "champion": p.get("championName", ""),
+            "kills": p.get("kills", 0),
+            "deaths": p.get("deaths", 0),
+            "assists": p.get("assists", 0),
+            "win": p.get("win", False),
+            "game_mode": info.get("gameMode", ""),
+            "queue_id": info.get("queueId", 0),
+            "game_duration": info.get("gameDuration", 0),
+            "game_creation": info.get("gameCreation", 0),
+        })
+    return result
+
+
+_QUEUE_MODE = {420: "ranked", 440: "ranked", 450: "aram", 400: "normal", 430: "normal"}
+
+
+def get_summoner_match_stats(puuid: str) -> dict:
+    db = get_db()
+    docs = (
+        db["matches"]
+        .find(
+            {"data.metadata.participants": puuid},
+            {"_id": 0, "data.info.participants": 1, "data.info.gameMode": 1,
+             "data.info.queueId": 1, "data.info.gameDuration": 1},
+        )
+        .sort("data.info.gameCreation", -1)
+        .limit(250)
+    )
+
+    total = wins = t_kills = t_deaths = t_assists = t_duration = 0
+    champions: dict = {}
+    by_mode: dict = {m: {"total": 0, "wins": 0, "kills": 0, "deaths": 0, "assists": 0}
+                     for m in ("ranked", "normal", "aram", "other")}
+
+    for doc in docs:
+        info = doc["data"]["info"]
+        p = next((x for x in info["participants"] if x.get("puuid") == puuid), None)
+        if not p:
+            continue
+        win = p.get("win", False)
+        k, d, a = p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0)
+        total += 1
+        if win:
+            wins += 1
+        t_kills += k; t_deaths += d; t_assists += a
+        t_duration += info.get("gameDuration", 0)
+        champ = p.get("championName", "")
+        if champ:
+            c = champions.setdefault(champ, {"games": 0, "wins": 0, "kills": 0, "deaths": 0, "assists": 0})
+            c["games"] += 1
+            if win:
+                c["wins"] += 1
+            c["kills"] += k; c["deaths"] += d; c["assists"] += a
+        label = _QUEUE_MODE.get(info.get("queueId", 0), "other")
+        bm = by_mode[label]
+        bm["total"] += 1
+        if win:
+            bm["wins"] += 1
+        bm["kills"] += k; bm["deaths"] += d; bm["assists"] += a
+
+    def kda(s):
+        return round((s["kills"] + s["assists"]) / max(1, s["deaths"]), 2)
+
+    top_champs = sorted(champions.items(), key=lambda x: x[1]["games"], reverse=True)[:8]
+
+    return {
+        "total": total,
+        "wins": wins,
+        "losses": total - wins,
+        "winrate": round(wins / total * 100, 1) if total else 0,
+        "avg_kda": round((t_kills + t_assists) / max(1, t_deaths), 2) if total else 0,
+        "avg_duration": round(t_duration / total) if total else 0,
+        "by_mode": {
+            k: {
+                "total": v["total"],
+                "wins": v["wins"],
+                "winrate": round(v["wins"] / v["total"] * 100, 1) if v["total"] else 0,
+                "avg_kda": kda(v),
+            }
+            for k, v in by_mode.items()
+        },
+        "top_champions": [
+            {
+                "champion": k,
+                "games": v["games"],
+                "wins": v["wins"],
+                "winrate": round(v["wins"] / v["games"] * 100, 1) if v["games"] else 0,
+                "avg_kda": kda(v),
+            }
+            for k, v in top_champs
+        ],
+    }
