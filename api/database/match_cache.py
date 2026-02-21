@@ -173,7 +173,6 @@ def get_summoner_match_stats(puuid: str) -> dict:
              "data.info.queueId": 1, "data.info.gameDuration": 1},
         )
         .sort("data.info.gameCreation", -1)
-        .limit(250)
     )
 
     total = wins = t_kills = t_deaths = t_assists = t_duration = 0

@@ -49,6 +49,9 @@ def cached_match_detail(match_id: str):
     game_duration = info["gameDuration"]
     game_mode = info.get("gameMode", "")
 
+    # derive which teamId won
+    blue_win = next((p["win"] for p in participants if p.get("teamId") == 100), False)
+
     def slim(p):
         return {
             "name": get_player_name(p),
@@ -59,6 +62,10 @@ def cached_match_detail(match_id: str):
             "win": p["win"],
             "teamId": p["teamId"],
             "totalDamageDealtToChampions": p.get("totalDamageDealtToChampions", 0),
+            "cs": p.get("totalMinionsKilled", 0) + p.get("neutralMinionsKilled", 0),
+            "visionScore": p.get("visionScore", 0),
+            "goldEarned": p.get("goldEarned", 0),
+            "damageToTurrets": p.get("damageDealtToTurrets", 0),
             "teamPosition": p.get("teamPosition", ""),
             "puuid": p.get("puuid", ""),
         }
@@ -69,6 +76,7 @@ def cached_match_detail(match_id: str):
         "game_mode_label": get_game_mode_label(game_mode),
         "game_duration": game_duration,
         "game_creation": info.get("gameCreation", 0),
+        "blue_win": blue_win,
         "participants": [slim(p) for p in participants],
         "focused_stats": create_stats_dict(focused, game_duration) if focused else None,
         "focused_participant": slim(focused) if focused else None,
