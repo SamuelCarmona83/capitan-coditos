@@ -141,7 +141,7 @@ async def analizar_partida(interaction: discord.Interaction, invocador: str, reg
 
     try:
         # Save summoner to database
-        save_summoner(invocador)
+        save_summoner(invocador, region=region)
         
         participant, match_data, game_duration, game_name, stats, game_mode, summoner_profile = await get_match_analysis_data(invocador, region=region)
         

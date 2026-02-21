@@ -199,7 +199,7 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str, reg
 
     try:
         # Save summoner to database
-        save_summoner(riot_id)
+        save_summoner(riot_id, region=region)
         
         # Get last 5 matches with summoner profile
         match_results, summoner_profile = await get_player_multiple_matches(riot_id, count=5, region=region)

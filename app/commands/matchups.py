@@ -1,6 +1,6 @@
 import discord
 from discord import app_commands
-from riot.api import get_player_matchup_data, REGION_MAP
+from riot.api import get_player_matchup_data, REGION_MAP, PLATFORM_TO_LEAGUEOFGRAPHS
 from utils.helpers import parse_riot_id, get_champion_icon_url, get_summoner_icon_url, handle_command_error
 from utils.autocomplete import riot_id_autocomplete
 from ai.openai_service import generar_analisis_matchups
@@ -18,7 +18,7 @@ async def matchups(interaction: discord.Interaction, riot_id: str, partidas: int
 
     try:
         # Save summoner to database
-        save_summoner(riot_id)
+        save_summoner(riot_id, region=region)
 
         # Send progress message (keep reference to edit it later)
         # Estimate: ~1.3 sec per match = 130 sec for 100 matches = ~2 minutes
@@ -176,13 +176,12 @@ async def matchups(interaction: discord.Interaction, riot_id: str, partidas: int
                     # Build match links for verification (LeagueOfGraphs format)
                     match_links = []
                     for match_id in data.get("match_ids", [])[:3]:  # Show max 3 games
-                        # Extract platform and numeric ID from match_id (e.g., "LA1_1234567890")
+                        # Extract platform and numeric ID from match_id (e.g., "LA2_1234567890")
                         parts = match_id.split("_")
                         if len(parts) == 2:
-                            platform = parts[0].lower()  # e.g., "la1" -> "la1"
+                            platform = parts[0].lower()  # e.g., "la2"
                             numeric_id = parts[1]
-                            # Convert platform to region name for URL using shared REGION_MAP
-                            region_code = REGION_MAP.get(platform, platform)
+                            region_code = PLATFORM_TO_LEAGUEOFGRAPHS.get(platform, platform)
                             match_links.append(f"[G{len(match_links)+1}](https://www.leagueofgraphs.com/match/{region_code}/{numeric_id})")
                     
                     links_text = " | ".join(match_links) if match_links else ""

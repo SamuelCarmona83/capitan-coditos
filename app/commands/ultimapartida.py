@@ -15,7 +15,7 @@ async def ultimapartida(interaction: discord.Interaction, riot_id: str, region: 
 
     try:
         # Save summoner to database
-        save_summoner(riot_id)
+        save_summoner(riot_id, region=region)
         
         embed = await create_ultima_partida_embed(riot_id, region=region)
         await interaction.followup.send(embed=embed)

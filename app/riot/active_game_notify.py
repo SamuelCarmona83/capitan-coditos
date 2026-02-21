@@ -3,9 +3,9 @@ import asyncio
 import discord
 import time
 import aiohttp
-from riot.api import get_summoner_data
-from riot.active_game import get_active_game_by_summoner_data
-from database.summoners import get_summoners_for_autocomplete
+from riot.api import get_summoner_data, REGION_MAP
+from riot.active_game import get_active_game_by_puuid
+from database.summoners import get_summoners_with_region
 
 CHECK_INTERVAL = 300  # Check every 5 minutes
 
@@ -181,26 +181,6 @@ async def create_active_games_embed(active_players_info):
     
     return embed
 
-async def check_bot_permissions(channel):
-    """Check bot permissions in the channel and log them"""
-    try:
-        if hasattr(channel, 'permissions_for'):
-            bot_permissions = channel.permissions_for(channel.guild.me)
-            
-            print(f"[ActiveGameNotify] Bot permissions in #{channel.name}:")
-            print(f"  - Send Messages: {bot_permissions.send_messages}")
-            print(f"  - Embed Links: {bot_permissions.embed_links}")
-            print(f"  - Use External Emojis: {bot_permissions.use_external_emojis}")
-            print(f"  - Read Message History: {bot_permissions.read_message_history}")
-            
-            return bot_permissions.embed_links
-        else:
-            print(f"[ActiveGameNotify] Cannot check permissions - not a guild channel")
-            return False
-    except Exception as e:
-        print(f"[ActiveGameNotify] Error checking permissions: {e}")
-        return False
-
 async def notify_active_games_task(bot: discord.Client, channel_id: int = None, user_id: int = None):
     await bot.wait_until_ready()
     target = None
@@ -226,31 +206,37 @@ async def notify_active_games_task(bot: discord.Client, channel_id: int = None, 
 
     while not bot.is_closed():
         try:
-            riot_ids = get_summoners_for_autocomplete(limit=100)
+            riot_ids = get_summoners_with_region(limit=100)
             active_now = {}
             print(f"[ActiveGameNotify] === Checking {len(riot_ids)} players ===")
             
-            for riot_id in riot_ids:
+            for riot_id, stored_region in riot_ids:
                 try:
                     # Skip players with too many consecutive errors
                     if consecutive_errors.get(riot_id, 0) >= 3:
                         print(f"[ActiveGameNotify] Skipping {riot_id} due to repeated errors")
                         continue
                     
-                    print(f"[ActiveGameNotify] Checking {riot_id}")
+                    print(f"[ActiveGameNotify] Checking {riot_id} (region: {stored_region})")
                     game_name, tag_line = riot_id.split('#', 1)
                     
-                    # Get summoner data (this gives us puuid)
-                    summoner = get_summoner_data(game_name, tag_line)
+                    # Get summoner data with the stored region
+                    summoner = get_summoner_data(game_name, tag_line, stored_region)
                     
                     # Check if we have puuid
                     if 'puuid' not in summoner:
                         print(f"[ActiveGameNotify] Warning: No 'puuid' field for {riot_id}")
                         consecutive_errors[riot_id] = consecutive_errors.get(riot_id, 0) + 1
                         continue
-                    
-                    # Use the new V5 API method
-                    active_game = get_active_game_by_summoner_data(summoner)
+
+                    puuid = summoner['puuid']
+
+                    # Derive the platform (e.g. "la1") for the Spectator API
+                    region_key = stored_region.upper()
+                    _, platform = REGION_MAP.get(region_key, ("americas", "la1"))
+
+                    # Use the correct platform for this player's region
+                    active_game = get_active_game_by_puuid(puuid, platforms=[platform])
                     
                     is_active = bool(active_game)
                     print(f"[ActiveGameNotify] {riot_id} active_game: {is_active}")
