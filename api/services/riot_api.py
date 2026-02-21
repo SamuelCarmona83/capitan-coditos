@@ -111,6 +111,32 @@ def get_summoner_profile_sync(puuid: str, region: str = None) -> dict:
     return _make_riot_request(url)
 
 
+def get_rank_sync(summoner_id: str, region: str = None) -> list:
+    """Fetch ranked entries by summoner id (legacy). Prefer get_rank_by_puuid_sync."""
+    _, platform = get_region_routing(region)
+    url = (
+        f"https://{platform}.api.riotgames.com/lol/league/v4/entries"
+        f"/by-summoner/{summoner_id}"
+    )
+    try:
+        return _make_riot_request(url) or []
+    except Exception:
+        return []
+
+
+def get_rank_by_puuid_sync(puuid: str, region: str = None) -> list:
+    """Fetch ranked entries by PUUID — works for all accounts including those without summoner id."""
+    _, platform = get_region_routing(region)
+    url = (
+        f"https://{platform}.api.riotgames.com/lol/league/v4/entries"
+        f"/by-puuid/{puuid}"
+    )
+    try:
+        return _make_riot_request(url) or []
+    except Exception:
+        return []
+
+
 def get_match_history_sync(puuid: str, count: int = 1, region: str = None) -> list:
     routing, _ = get_region_routing(region)
     url = (

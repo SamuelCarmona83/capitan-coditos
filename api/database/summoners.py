@@ -68,15 +68,15 @@ def get_all_summoner_ids() -> List[str]:
 
 
 def get_summoners_with_region(limit: int = 200) -> List[tuple]:
-    """Return list of (riot_id, region) for all summoners, ordered by recency."""
+    """Return list of (riot_id, region, last_searched) for all summoners, ordered by recency."""
     db = get_db()
     docs = (
         db["summoners"]
-        .find({}, {"_id": 1, "region": 1})
+        .find({}, {"_id": 1, "region": 1, "last_searched": 1})
         .sort("last_searched", -1)
         .limit(limit)
     )
-    return [(doc["_id"], doc.get("region", "LAN")) for doc in docs]
+    return [(doc["_id"], doc.get("region", "LAN"), doc.get("last_searched")) for doc in docs]
 
 
 def get_summoner_stats() -> dict:

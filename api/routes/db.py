@@ -87,6 +87,40 @@ def summoner_stats():
     return jsonify({"riot_id": riot_id, **get_summoner_match_stats(profile["puuid"])})
 
 
+@db_bp.get("/summoner-rank")
+def summoner_rank():
+    """Fetch live rank entries for a summoner from Riot API (cached in Redis 10 min)."""
+    riot_id = request.args.get("riot_id")
+    region = request.args.get("region", "LAN")
+    force = request.args.get("force", "0") == "1"
+    if not riot_id:
+        return jsonify({"error": "riot_id is required"}), 400
+
+    import json
+    from database.match_cache import get_summoner_profile, _redis
+
+    cache_key = f"rank:{riot_id}"
+    if not force:
+        cached = _redis().get(cache_key)
+        if cached:
+            return jsonify({"riot_id": riot_id, "entries": json.loads(cached)})
+    else:
+        _redis().delete(cache_key)
+
+    profile = get_summoner_profile(riot_id)
+    puuid = (profile or {}).get("puuid")
+    if not puuid:
+        return jsonify({"riot_id": riot_id, "entries": []})
+
+    from services.riot_api import get_rank_by_puuid_sync
+    entries = get_rank_by_puuid_sync(puuid, region)
+    try:
+        _redis().setex(cache_key, 600, json.dumps(entries))
+    except Exception:
+        pass
+    return jsonify({"riot_id": riot_id, "entries": entries})
+
+
 @db_bp.get("/summoners/autocomplete")
 def autocomplete():
     """
@@ -101,11 +135,33 @@ def autocomplete():
 
 @db_bp.get("/summoners/with-region")
 def summoners_with_region():
-    """Returns [{riot_id, region}, ...] for all stored summoners."""
+    """Returns [{riot_id, region, last_searched, profileIconId, summonerLevel}, ...] for all stored summoners."""
     from database.summoners import get_summoners_with_region
+    from database.mongo import get_db
     limit = min(int(request.args.get("limit", 200)), 500)
     pairs = get_summoners_with_region(limit)
-    return jsonify({"summoners": [{"riot_id": r, "region": reg} for r, reg in pairs]})
+    riot_ids = [r for r, _, _ in pairs]
+
+    # Batch-fetch profile icons from summoner_profiles
+    db = get_db()
+    profiles = {
+        doc["_id"]: doc.get("profile", {})
+        for doc in db["summoner_profiles"].find(
+            {"_id": {"$in": riot_ids}},
+            {"_id": 1, "profile.profileIconId": 1, "profile.summonerLevel": 1}
+        )
+    }
+
+    return jsonify({"summoners": [
+        {
+            "riot_id": r,
+            "region": reg,
+            "last_searched": ls.isoformat() if ls else None,
+            "profileIconId": profiles.get(r, {}).get("profileIconId"),
+            "summonerLevel": profiles.get(r, {}).get("summonerLevel"),
+        }
+        for r, reg, ls in pairs
+    ]})
 
 
 @db_bp.post("/summoners")

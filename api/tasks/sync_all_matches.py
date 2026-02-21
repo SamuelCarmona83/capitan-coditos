@@ -38,7 +38,7 @@ def sync_all_matches():
         new_stored = 0
         errors = 0
 
-        for riot_id, region in summoner_pairs:
+        for riot_id, region, _ts in summoner_pairs:
             try:
                 cached = get_summoner_profile(riot_id)
                 if cached:

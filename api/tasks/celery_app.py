@@ -17,6 +17,7 @@ celery_app = Celery(
         "tasks.prefetch",
         "tasks.duration_stats",
         "tasks.sync_all_matches",
+        "tasks.backfill_summoner_ids",
     ],
 )
 
@@ -50,6 +51,7 @@ def create_celery(flask_app=None):
 
 @worker_ready.connect
 def on_worker_ready(sender, **kwargs):
-    """Kick off a full match sync shortly after the worker starts."""
+    """Kick off a full match sync and summoner-id backfill shortly after the worker starts."""
+    celery_app.send_task("tasks.backfill_summoner_ids.backfill_summoner_ids", countdown=10)
     celery_app.send_task("tasks.sync_all_matches.sync_all_matches", countdown=15)
-    print("[startup] Queued sync_all_matches to run in 15s")
+    print("[startup] Queued backfill_summoner_ids (10s) and sync_all_matches (15s)")
