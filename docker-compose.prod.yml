@@ -3,6 +3,16 @@ networks:
     driver: bridge
 
 services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: capitan-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - app-network
+    depends_on:
+      - api
+
   api:
     build:
       context: ./api
