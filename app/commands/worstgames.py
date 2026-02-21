@@ -1,6 +1,6 @@
 import discord
 from discord import app_commands
-from riot.api import get_worst_performances, REGION_MAP
+from riot.api import get_worst_performances, REGION_MAP, PLATFORM_TO_LEAGUEOFGRAPHS
 from utils.helpers import parse_riot_id, handle_command_error
 from utils.autocomplete import riot_id_autocomplete
 from ai.openai_service import generar_analisis_worst_games
@@ -36,7 +36,7 @@ async def worstgames(interaction: discord.Interaction, riot_id: str, partidas: i
 
     try:
         # Save summoner to database
-        save_summoner(riot_id)
+        save_summoner(riot_id, region=region)
 
         # Send progress message
         estimated_time = int((partidas * 1.3) / 60)
@@ -108,13 +108,7 @@ async def worstgames(interaction: discord.Interaction, riot_id: str, partidas: i
             if len(parts) == 2:
                 platform = parts[0].lower()
                 numeric_id = parts[1]
-                region_map_url = {
-                    "la1": "lan", "la2": "las", "na1": "na", "br1": "br",
-                    "euw1": "euw", "eun1": "eune", "tr1": "tr", "ru": "ru",
-                    "kr": "kr", "jp1": "jp", "oc1": "oce",
-                    "ph2": "ph", "sg2": "sg", "th2": "th", "tw2": "tw", "vn2": "vn"
-                }
-                region_code = region_map_url.get(platform, platform)
+                region_code = PLATFORM_TO_LEAGUEOFGRAPHS.get(platform, platform)
                 game_link = f"https://www.leagueofgraphs.com/match/{region_code}/{numeric_id}"
             
             # Format line

@@ -5,6 +5,14 @@ from utils.helpers import make_riot_request, parse_riot_id
 
 RIOT_API_KEY = os.getenv("RIOT_API_KEY")
 
+def _upsert_summoner(riot_id: str, region: str, puuid: str):
+    """Persist PUUID and region for a riot_id without blocking on import-time."""
+    try:
+        from database import save_summoner
+        save_summoner(riot_id, region=region, puuid=puuid)
+    except Exception as e:
+        print(f"[API] Warning: could not upsert summoner {riot_id}: {e}")
+
 # Region mappings for Riot API
 # User-friendly region -> (routing_value for account/match APIs, platform_id for summoner/spectator APIs)
 REGION_MAP = {
@@ -27,6 +35,26 @@ REGION_MAP = {
 }
 
 DEFAULT_REGION = "LAN"
+
+# Maps Riot platform codes (from match IDs) to LeagueOfGraphs URL slugs
+PLATFORM_TO_LEAGUEOFGRAPHS = {
+    "la1":  "lan",
+    "la2":  "las",
+    "na1":  "na",
+    "br1":  "br",
+    "euw1": "euw",
+    "eun1": "eune",
+    "tr1":  "tr",
+    "ru":   "ru",
+    "kr":   "kr",
+    "jp1":  "jp",
+    "oc1":  "oce",
+    "ph2":  "ph",
+    "sg2":  "sg",
+    "th2":  "th",
+    "tw2":  "tw",
+    "vn2":  "vn",
+}
 
 def get_region_routing(region: str = None):
     """Get (routing_value, platform_id) for a region. Defaults to LAN."""
@@ -115,6 +143,10 @@ async def get_player_match_data(riot_id, region=None):
         game_name, tag_line = parse_riot_id(riot_id)
         summoner = await asyncio.to_thread(get_summoner_data, game_name, tag_line, region)
         puuid = summoner['puuid']
+
+        # Persist puuid + region so the DB stays up to date
+        effective_region = (region or DEFAULT_REGION).upper()
+        await asyncio.to_thread(_upsert_summoner, riot_id, effective_region, puuid)
         
         # Get summoner profile for icon
         summoner_profile = await asyncio.to_thread(get_summoner_profile_data, puuid, region)
@@ -138,6 +170,9 @@ async def get_player_multiple_matches(riot_id: str, count: int = 5, region=None)
         game_name, tag_line = parse_riot_id(riot_id)
         summoner = await asyncio.to_thread(get_summoner_data, game_name, tag_line, region)
         puuid = summoner['puuid']
+
+        effective_region = (region or DEFAULT_REGION).upper()
+        await asyncio.to_thread(_upsert_summoner, riot_id, effective_region, puuid)
         
         # Get summoner profile for icon
         summoner_profile = await asyncio.to_thread(get_summoner_profile_data, puuid, region)
@@ -169,7 +204,10 @@ async def get_player_matchup_data(riot_id: str, count: int = 50, progress_callba
         summoner = await asyncio.to_thread(get_summoner_data, game_name, tag_line, region)
         puuid = summoner['puuid']
         summoner_profile = await asyncio.to_thread(get_summoner_profile_data, puuid, region)
-        
+
+        effective_region = (region or DEFAULT_REGION).upper()
+        await asyncio.to_thread(_upsert_summoner, riot_id, effective_region, puuid)
+
         # Fetch ranked match IDs (paginate if needed, max 100 per call)
         match_ids = []
         remaining = count
@@ -357,7 +395,10 @@ async def get_worst_performances(riot_id: str, count: int = 250, progress_callba
         summoner = await asyncio.to_thread(get_summoner_data, game_name, tag_line, region)
         puuid = summoner['puuid']
         summoner_profile = await asyncio.to_thread(get_summoner_profile_data, puuid, region)
-        
+
+        effective_region = (region or DEFAULT_REGION).upper()
+        await asyncio.to_thread(_upsert_summoner, riot_id, effective_region, puuid)
+
         # Fetch ranked match IDs
         match_ids = []
         remaining = count
@@ -474,5 +515,140 @@ async def get_worst_performances(riot_id: str, count: int = 250, progress_callba
         }
         
         return worst_games, general_stats, summoner_profile
+    except requests.exceptions.RequestException:
+        raise ValueError("Error al conectar con la API de Riot.")
+
+
+async def get_game_duration_stats(riot_id: str, count: int = 50, progress_callback=None, region=None):
+    """Analyze game duration distribution across recent matches.
+
+    Buckets (non-remakes only):
+        ≤15 min | 15–20 min | 20–25 min | 25–30 min | >30 min
+
+    Each bucket reports: total, wins, losses, % of analysed games.
+
+    Returns (buckets, general_stats, summoner_profile).
+    """
+    import asyncio
+
+    BUCKETS = [
+        {"label": "≤15 min",  "max": 15},
+        {"label": "15–20 min","max": 20},
+        {"label": "20–25 min","max": 25},
+        {"label": "25–30 min","max": 30},
+        {"label": ">30 min",  "max": None},
+    ]
+
+    try:
+        game_name, tag_line = parse_riot_id(riot_id)
+        summoner = await asyncio.to_thread(get_summoner_data, game_name, tag_line, region)
+        puuid = summoner["puuid"]
+        summoner_profile = await asyncio.to_thread(get_summoner_profile_data, puuid, region)
+
+        effective_region = (region or DEFAULT_REGION).upper()
+        await asyncio.to_thread(_upsert_summoner, riot_id, effective_region, puuid)
+
+        # Paginate match IDs (all queues)
+        match_ids = []
+        remaining = count
+        start = 0
+        while remaining > 0:
+            batch_size = min(remaining, 100)
+            batch = await asyncio.to_thread(
+                get_match_history_filtered,
+                puuid, batch_size, start, None, None, region
+            )
+            if not batch:
+                break
+            match_ids.extend(batch)
+            start += batch_size
+            remaining -= batch_size
+            if len(batch) < batch_size:
+                break
+
+        if not match_ids:
+            raise ValueError("No se encontraron partidas recientes.")
+
+        # Init bucket counters
+        buckets = [
+            {"label": b["label"], "max": b["max"], "total": 0, "wins": 0, "losses": 0}
+            for b in BUCKETS
+        ]
+
+        total_fetched = len(match_ids)
+        total_analyzed = 0
+        total_wins = 0
+        errors = 0
+        skipped_remakes = 0
+        total_duration_sec = 0
+
+        for i, match_id in enumerate(match_ids):
+            if progress_callback:
+                await progress_callback(i + 1, total_fetched)
+
+            match_data = await asyncio.to_thread(_get_match_data_safe_sync, match_id, region)
+            if not match_data:
+                errors += 1
+                continue
+
+            duration_sec = match_data["info"].get("gameDuration", 0)
+            duration_min = duration_sec / 60.0
+
+            # Skip remakes (< 5 min)
+            if duration_min < 5:
+                skipped_remakes += 1
+                continue
+
+            participant = next(
+                (p for p in match_data["info"]["participants"] if p["puuid"] == puuid),
+                None
+            )
+            if not participant:
+                errors += 1
+                continue
+
+            won = participant.get("win", False)
+            total_analyzed += 1
+            total_duration_sec += duration_sec
+            if won:
+                total_wins += 1
+
+            # Assign to bucket
+            prev_max = 0
+            for bucket in buckets:
+                if bucket["max"] is None or duration_min < bucket["max"]:
+                    if duration_min >= prev_max:
+                        bucket["total"] += 1
+                        if won:
+                            bucket["wins"] += 1
+                        else:
+                            bucket["losses"] += 1
+                        break
+                prev_max = bucket["max"]
+
+        if total_analyzed == 0:
+            raise ValueError("No hay partidas válidas para analizar.")
+
+        # Compute percentages
+        for bucket in buckets:
+            bucket["pct"]      = (bucket["total"] / total_analyzed) * 100
+            bucket["win_pct"]  = (bucket["wins"]  / bucket["total"] * 100) if bucket["total"] else 0
+            bucket["loss_pct"] = (bucket["losses"] / bucket["total"] * 100) if bucket["total"] else 0
+
+        avg_duration_min = (total_duration_sec / total_analyzed) / 60.0
+
+        general_stats = {
+            "total_fetched":   total_fetched,
+            "total_analyzed":  total_analyzed,
+            "skipped_remakes": skipped_remakes,
+            "errors":          errors,
+            "total_wins":      total_wins,
+            "total_losses":    total_analyzed - total_wins,
+            "win_rate":        (total_wins / total_analyzed) * 100,
+            "avg_duration_min": avg_duration_min,
+        }
+
+        return buckets, general_stats, summoner_profile
+
     except requests.exceptions.RequestException:
         raise ValueError("Error al conectar con la API de Riot.")

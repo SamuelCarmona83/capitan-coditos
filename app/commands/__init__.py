@@ -4,6 +4,7 @@ from .historialpartidas import register_historialpartidas
 from .dbstats import register_dbstats
 from .matchups import register_matchups
 from .worstgames import register_worstgames
+from .duracionpartidas import register_duracionpartidas
 
 def register_commands(tree):
     register_ultimapartida(tree)
@@ -12,3 +13,4 @@ def register_commands(tree):
     register_dbstats(tree)
     register_matchups(tree)
     register_worstgames(tree)
+    register_duracionpartidas(tree)
