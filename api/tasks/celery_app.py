@@ -2,6 +2,7 @@ import os
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_ready
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 PREFETCH_INTERVAL = int(os.getenv("PREFETCH_INTERVAL_MINUTES", "30"))
@@ -45,3 +46,10 @@ celery_app.conf.update(
 def create_celery(flask_app=None):
     """Optionally bind Celery to a Flask app context (unused but provided for future use)."""
     return celery_app
+
+
+@worker_ready.connect
+def on_worker_ready(sender, **kwargs):
+    """Kick off a full match sync shortly after the worker starts."""
+    celery_app.send_task("tasks.sync_all_matches.sync_all_matches", countdown=15)
+    print("[startup] Queued sync_all_matches to run in 15s")
