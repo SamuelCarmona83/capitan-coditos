@@ -36,6 +36,7 @@
             0% { background-position: -400px 0 }
             100% { background-position: 400px 0 }
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .skeleton {
             background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
             background-size: 800px 100%;
@@ -46,6 +47,11 @@
 </head>
 
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col select-none">
+
+    <footer class="fixed bottom-0 inset-x-0 z-40 bg-slate-900/80 backdrop-blur border-t border-slate-700/50 px-6 py-1.5 flex items-center justify-between text-xs text-slate-500 pointer-events-none">
+        <span>Capitán Coditos &mdash; League of Legends match tracker</span>
+        <span id="footer-status">Ready</span>
+    </footer>
 
     <header class="bg-slate-800 border-b border-slate-700 px-6 py-3 shrink-0 flex items-center justify-between">
         <span class="font-bold">Capitán Coditos</span>
@@ -112,9 +118,16 @@
 
         <!-- Match list -->
         <section class="w-64 shrink-0 border-r border-slate-700 flex flex-col overflow-hidden">
-            <div id="match-list-header"
-                class="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-700 shrink-0">
-                Matches</div>
+            <div class="px-3 py-2 border-b border-slate-700 shrink-0 flex items-center justify-between">
+                <div id="match-list-header" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Matches</div>
+                <button id="sync-btn" onclick="syncSummoner()" title="Sync latest matches"
+                    class="hidden text-slate-400 hover:text-white transition-colors p-0.5 rounded hover:bg-slate-700">
+                    <svg id="sync-icon" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                </button>
+            </div>
             <div id="match-list" class="flex-1 overflow-y-auto divide-y divide-slate-700/40">
                 <p class="p-4 text-slate-500 text-sm">Select a summoner.</p>
             </div>
@@ -131,7 +144,7 @@
         </div>
 
         <!-- Profile / Match detail -->
-        <div id="detail-panel" class="flex-1 overflow-y-auto p-4 hidden">
+        <div id="detail-panel" class="flex-1 overflow-y-auto p-4 pb-8 hidden">
 
             <!-- Compact strip shown when a match is open -->
             <div id="profile-strip"
@@ -225,6 +238,7 @@
             const { summoners } = await fetch('/api/db/summoners/with-region').then(r => r.json());
             allSummoners = summoners;
             renderSummonerList(summoners);
+            document.getElementById('footer-status').textContent = `${summoners.length} summoners loaded`;
             document.getElementById('search').addEventListener('input', e => {
                 const q = e.target.value.toLowerCase();
                 renderSummonerList(q ? allSummoners.filter(s => s.riot_id.toLowerCase().includes(q)) : allSummoners);
@@ -283,7 +297,8 @@
                 const li = document.createElement('li');
                 li.className = 'px-3 py-2.5 cursor-pointer hover:bg-slate-700/60 text-sm border-b border-slate-700/30 transition-colors';
                 li.dataset.id = riot_id;
-                li.innerHTML = `<div class="font-medium truncate">${riot_id.split('#')[0]}</div><div class="text-xs text-slate-400">${region}</div>`;
+                const [name, tag] = riot_id.split('#');
+                li.innerHTML = `<div class="font-medium truncate">${name}<span class="text-slate-500 font-normal">#${tag}</span></div><div class="text-xs text-slate-400">${region}</div>`;
                 li.onclick = () => selectSummoner(riot_id, li);
                 if (riot_id === activeSummonerId) li.classList.add('bg-slate-700');
                 ul.appendChild(li);
@@ -298,6 +313,7 @@
             activeMode = 'all';
 
             document.getElementById('match-list-header').textContent = riot_id.split('#')[0];
+            document.getElementById('sync-btn').classList.remove('hidden');
             document.getElementById('match-list').innerHTML = skeletonMatchList();
             document.getElementById('splash').classList.add('hidden');
             document.getElementById('detail-panel').classList.remove('hidden');
@@ -314,6 +330,9 @@
 
             activeMatches = matchRes.matches || [];
             activeStats = statsRes;
+
+            document.getElementById('footer-status').textContent =
+                `${riot_id} · ${activeMatches.length} matches cached · ${activeStats.total ?? 0} in stats`;
 
             renderMatchList(activeMatches);
             renderProfile(activeMode);
@@ -533,6 +552,36 @@
 
         const fmtDuration = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
         const fmtDate = ms => new Date(ms).toLocaleDateString();
+
+        async function syncSummoner() {
+            if (!activeSummonerId) return;
+            const btn = document.getElementById('sync-btn');
+            const icon = document.getElementById('sync-icon');
+            btn.disabled = true;
+            icon.style.animation = 'spin 0.8s linear infinite';
+            document.getElementById('footer-status').textContent = `Syncing ${activeSummonerId}…`;
+
+            const summoner = allSummoners.find(s => s.riot_id === activeSummonerId);
+            const region = summoner?.region ?? 'LAN';
+            try {
+                await fetch(`/api/summoner/${encodeURIComponent(activeSummonerId)}/match-history?region=${region}&count=10&analyze=false`);
+                // Reload matches from cache
+                const [matchRes, statsRes] = await Promise.all([
+                    fetch(`/api/db/matches?riot_id=${encodeURIComponent(activeSummonerId)}&count=50`).then(r => r.json()),
+                    fetch(`/api/db/summoner-stats?riot_id=${encodeURIComponent(activeSummonerId)}`).then(r => r.json()),
+                ]);
+                activeMatches = matchRes.matches || [];
+                activeStats = statsRes;
+                renderMatchList(activeMatches);
+                renderProfile(activeMode);
+                document.getElementById('footer-status').textContent =
+                    `${activeSummonerId} · ${activeMatches.length} matches cached · ${activeStats.total ?? 0} in stats`;
+            } catch (e) {
+                document.getElementById('footer-status').textContent = `Sync failed: ${e.message}`;
+            }
+            icon.style.animation = '';
+            btn.disabled = false;
+        }
 
         // ── Modal ────────────────────────────────────────────────────────────
         let acTimer = null;
