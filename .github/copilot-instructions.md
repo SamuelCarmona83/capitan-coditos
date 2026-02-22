@@ -35,20 +35,42 @@ Discord Bot (bot/)  ──HTTP──►  Flask API (api/)  ──►  MongoDB  (
 | `api/tasks/duration_stats.py` | Duration bucket analysis task |
 | `api/tasks/matchups.py` | Champion matchup task |
 | `api/tasks/worst_games.py` | Worst games task |
-| `api/templates/index.html` | **Single-page dashboard** — all UI in one ~1100 line file |
+| `api/templates/index.html` | Web dashboard HTML shell — loads the four static JS files below |
+| `api/static/js/constants.js` | Data constants (`DD`, `TIER_COLOR`, `QUEUE_MODE`…) + pure formatting utils (`fmtDuration`, `timeAgo`…) |
+| `api/static/js/components.js` | Pure UI components returning HTML strings (`StatsRow`, `MatchCard`, `TeamTable`, skeletons…) + `$`/`mount` helpers |
+| `api/static/js/mobile.js` | Mobile panel navigation — `setMobilePanel(panel)`, `isMobile()` |
+| `api/static/js/app.js` | All app state, render functions, API calls, event wiring, and bootstrap calls |
 | `bot/utils/api_client.py` | aiohttp wrapper + task polling helper for the bot |
 | `bot/utils/embed_builders.py` | Discord embed factory functions |
 | `docker-compose.prod.yml` | Production stack |
 
 ---
 
-## Dashboard SPA (`api/templates/index.html`)
+## Dashboard SPA
 
-The web dashboard is a **single vanilla JS + Tailwind CDN file**. There is no build step.
+The web dashboard is served at `/` and is a **vanilla JS + Tailwind CDN app — no build step**. The JS is split across four files loaded in dependency order:
 
-### Global state
+```html
+<script src="/static/js/constants.js"></script>
+<script src="/static/js/components.js"></script>
+<script src="/static/js/mobile.js"></script>
+<script src="/static/js/app.js"></script>
+```
+
+**Load order is critical** — all globals are `window`-scoped, so later files depend on earlier ones.
+
+### File responsibilities
+
+| File | Contains |
+|---|---|
+| `constants.js` | `DD`, `TIER_COLOR`, `TIER_LABEL`, `ROMAN`, `QUEUE_LABEL`, `QUEUE_MODE`, `CHAMP_KEYS`, `champKey()`, `fmtDuration()`, `fmtDate()`, `dateBucket()`, `timeAgo()` |
+| `components.js` | `$()`, `mount()`, `StatsRow`, `ChampGridItem`, `MatchCard`, `RankBadge`, `ParticipantRow`, `TeamTable`, `MatchOutcomeBar`, skeleton helpers |
+| `mobile.js` | `mobileView`, `isMobile()`, `setMobilePanel(panel)` — panels: `'list'` `'profile'` `'matches'` `'match-detail'` |
+| `app.js` | All global state, every render/API/event function, and the `setupModalAutocomplete(); init();` bootstrap |
+
+### Global state (in `app.js`)
 ```js
-DD              // DDragon CDN base URL
+DD              // DDragon CDN base URL (updated to latest version in init)
 allSummoners    // full summoner list from API
 activeSummonerId
 activeMatches
@@ -67,6 +89,10 @@ durationCache   // { [riot_id]: result } — in-memory cache per summoner
 3. **`runDurationAnalysis(force=false)`** — checks `durationCache` first; if miss, POSTs task, polls every 2s, calls `renderDurationResult()` on success. The ↻ button passes `force=true`.
 4. **`selectMatch(match_id)`** — hides profile view, shows match view with team tables.
 5. **`closeMatch()`** / **`closeProfile()`** — restore previous state.
+
+### Adding a new UI component
+1. Add the pure function to `components.js` (returns an HTML string, no side effects).
+2. Use `mount('element-id', MyComponent(data))` from `app.js` to render it.
 
 ### CommunityDragon assets
 Rank mini-crests:

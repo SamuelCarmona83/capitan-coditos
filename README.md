@@ -49,6 +49,30 @@ Built on a microservices architecture: a **Flask REST API** handles all data fet
 
 ---
 
+## 🌐 Web Dashboard
+
+The API exposes a single-page web dashboard at `http://localhost:5001/` (or your server IP on port 5001 in production).
+
+It is a **vanilla JS + Tailwind CDN** app — no build step required. The UI is split across four static files loaded in dependency order:
+
+| File | Responsibility |
+|---|---|
+| `static/js/constants.js` | Global constants (`DD`, `TIER_COLOR`, queue maps) and pure formatting helpers |
+| `static/js/components.js` | Pure component functions returning HTML strings (`StatsRow`, `MatchCard`, `TeamTable`, skeletons…) |
+| `static/js/mobile.js` | Mobile-first panel navigation (`setMobilePanel`, `isMobile`) |
+| `static/js/app.js` | App state, all render/API functions, event wiring, and bootstrap calls |
+
+Features:
+- Summoner list with region editing and search
+- Match history timeline (ranked / normal / ARAM filter tabs)
+- Per-summoner profile: champion grid, win-rate doughnut chart, rank badge
+- Match detail view: team tables with damage/gold bars and AI analysis
+- Duration distribution chart (Chart.js bar + line combo, powered by Celery task)
+- Animated champion splash background and live sync progress bar
+- Fully responsive — works on desktop and mobile
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -68,12 +92,20 @@ capitan-coditos/
 │   │   └── tasks.py            # POST /api/tasks/* (enqueue + poll)
 │   ├── services/
 │   │   └── riot_api.py         # Riot API wrappers + match logic
-│   └── tasks/
-│       ├── celery_app.py       # Celery configuration
-│       ├── duration_stats.py   # Game duration breakdown task
-│       ├── matchups.py         # Champion matchup analysis task
-│       ├── prefetch.py         # Background match prefetch task
-│       └── worst_games.py      # Worst games analysis task
+│   ├── static/
+│   │   └── js/
+│   │       ├── constants.js    # Data constants + formatting utilities (DD, TIER_COLOR, fmtDuration…)
+│   │       ├── components.js   # Pure UI component functions + skeleton helpers
+│   │       ├── mobile.js       # Mobile panel navigation (setMobilePanel)
+│   │       └── app.js          # App state, render logic, API calls, event wiring
+│   ├── tasks/
+│   │   ├── celery_app.py       # Celery configuration
+│   │   ├── duration_stats.py   # Game duration breakdown task
+│   │   ├── matchups.py         # Champion matchup analysis task
+│   │   ├── prefetch.py         # Background match prefetch task
+│   │   └── worst_games.py      # Worst games analysis task
+│   └── templates/
+│       └── index.html          # Web dashboard shell (loads static JS files)
 │
 ├── bot/                        # Discord bot (thin client)
 │   ├── bot.py                  # Bot entry point
