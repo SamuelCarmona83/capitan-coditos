@@ -160,7 +160,26 @@ def get_cached_matches_for_puuid(puuid: str, count: int = 20) -> list:
     return result
 
 
-_QUEUE_MODE = {420: "ranked", 440: "ranked", 450: "aram", 400: "normal", 430: "normal"}
+_QUEUE_MODE = {
+    400: "normal",   # Normal Draft
+    420: "ranked",   # Ranked Solo/Duo
+    430: "normal",   # Normal Blind
+    440: "ranked",   # Ranked Flex
+    450: "aram",     # ARAM
+    480: "normal",   # Swiftplay
+    490: "normal",   # Quickplay
+    700: "ranked",   # Clash
+    720: "aram",     # ARAM Clash
+    900: "other",    # ARURF
+    1020: "other",   # One for All
+    1300: "other",   # Nexus Blitz
+    1400: "other",   # Ultimate Spellbook
+    1700: "other",   # Arena
+    1710: "other",   # Arena (16j)
+    1900: "other",   # Pick URF
+    2300: "other",   # Brawl
+    2400: "aram",    # ARAM: Mayhem
+}
 
 
 def get_summoner_match_stats(puuid: str) -> dict:
@@ -177,7 +196,7 @@ def get_summoner_match_stats(puuid: str) -> dict:
 
     total = wins = t_kills = t_deaths = t_assists = t_duration = 0
     champions: dict = {}
-    by_mode: dict = {m: {"total": 0, "wins": 0, "kills": 0, "deaths": 0, "assists": 0}
+    by_mode: dict = {m: {"total": 0, "wins": 0, "kills": 0, "deaths": 0, "assists": 0, "duration": 0, "champions": {}}
                      for m in ("ranked", "normal", "aram", "other")}
 
     for doc in docs:
@@ -205,11 +224,29 @@ def get_summoner_match_stats(puuid: str) -> dict:
         if win:
             bm["wins"] += 1
         bm["kills"] += k; bm["deaths"] += d; bm["assists"] += a
+        bm["duration"] += info.get("gameDuration", 0)
+        if champ:
+            bc = bm["champions"].setdefault(champ, {"games": 0, "wins": 0, "kills": 0, "deaths": 0, "assists": 0})
+            bc["games"] += 1
+            if win:
+                bc["wins"] += 1
+            bc["kills"] += k; bc["deaths"] += d; bc["assists"] += a
 
     def kda(s):
         return round((s["kills"] + s["assists"]) / max(1, s["deaths"]), 2)
 
-    top_champs = sorted(champions.items(), key=lambda x: x[1]["games"], reverse=True)[:8]
+    def top_champs_list(champ_dict, n=8):
+        ranked_champs = sorted(champ_dict.items(), key=lambda x: x[1]["games"], reverse=True)[:n]
+        return [
+            {
+                "champion": k,
+                "games": v["games"],
+                "wins": v["wins"],
+                "winrate": round(v["wins"] / v["games"] * 100, 1) if v["games"] else 0,
+                "avg_kda": kda(v),
+            }
+            for k, v in ranked_champs
+        ]
 
     return {
         "total": total,
@@ -222,19 +259,13 @@ def get_summoner_match_stats(puuid: str) -> dict:
             k: {
                 "total": v["total"],
                 "wins": v["wins"],
+                "losses": v["total"] - v["wins"],
                 "winrate": round(v["wins"] / v["total"] * 100, 1) if v["total"] else 0,
                 "avg_kda": kda(v),
+                "avg_duration": round(v["duration"] / v["total"]) if v["total"] else 0,
+                "top_champions": top_champs_list(v["champions"]),
             }
             for k, v in by_mode.items()
         },
-        "top_champions": [
-            {
-                "champion": k,
-                "games": v["games"],
-                "wins": v["wins"],
-                "winrate": round(v["wins"] / v["games"] * 100, 1) if v["games"] else 0,
-                "avg_kda": kda(v),
-            }
-            for k, v in top_champs
-        ],
+        "top_champions": top_champs_list(champions),
     }

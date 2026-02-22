@@ -187,6 +187,48 @@ def upsert_summoner():
     return "", 204
 
 
+@db_bp.patch("/summoners/<path:riot_id>/region")
+def update_summoner_region(riot_id: str):
+    """
+    Body: { region }
+    Updates the summoner's region, busts the Redis profile cache, and
+    re-fetches+stores their Summoner V4 profile from Riot.
+    Returns { riot_id, region, profileIconId }.
+    """
+    data = request.get_json(force=True) or {}
+    region = (data.get("region") or "").upper()
+    if region not in ("LAN", "LAS", "NA", "EUW", "EUNE", "BR", "KR", "JP",
+                      "OCE", "TR", "RU", "PH", "SG", "TH", "TW", "VN"):
+        return jsonify({"error": f"Invalid region: {region}"}), 400
+
+    from database.summoners import save_summoner
+    from database.match_cache import get_summoner_profile, store_summoner_profile, _redis
+    from services.riot_api import get_summoner_data_sync, get_summoner_profile_sync
+    from services.match_logic import parse_riot_id
+
+    # 1 – Update region on the summoner document
+    save_summoner(riot_id, region=region)
+
+    # 2 – Bust Redis profile cache so the stale icon is gone immediately
+    try:
+        _redis().delete(f"puuid:{riot_id}")
+    except Exception:
+        pass
+
+    # 3 – Re-fetch account + summoner profile from Riot with the new region
+    try:
+        game_name, tag_line = parse_riot_id(riot_id)
+        account = get_summoner_data_sync(game_name, tag_line, region)
+        puuid = account["puuid"]
+        profile = get_summoner_profile_sync(puuid, region)
+        store_summoner_profile(riot_id, puuid, profile)
+        icon_id = profile.get("profileIconId")
+    except Exception as exc:
+        return jsonify({"error": f"Riot API error: {exc}"}), 502
+
+    return jsonify({"riot_id": riot_id, "region": region, "profileIconId": icon_id})
+
+
 @db_bp.get("/stats")
 def db_stats():
     """Returns { total_summoners, total_searches }."""

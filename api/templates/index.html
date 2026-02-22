@@ -274,7 +274,21 @@
         const TIER_LABEL = t => t ? t.charAt(0) + t.slice(1).toLowerCase() : '';
         const ROMAN = { I: 1, II: 2, III: 3, IV: 4 };
 
-        const QUEUE_LABEL = { 420: 'Ranked', 440: 'Ranked Flex', 450: 'ARAM', 400: 'Normal', 430: 'Normal Blind', 0: 'Custom' };
+        const QUEUE_LABEL = {
+            400: 'Normal Draft', 420: 'Ranked Solo', 430: 'Normal Blind', 440: 'Ranked Flex',
+            450: 'ARAM', 480: 'Partida rápida', 490: 'Quickplay',
+            700: 'Clash', 720: 'Clash ARAM', 900: 'ARURF', 1020: 'One for All',
+            1300: 'Nexus Blitz', 1400: 'Ultimate Spellbook', 1700: 'Arena', 1710: 'Arena (16j)',
+            1900: 'Pick URF', 2300: 'Brawl', 2400: 'ARAM: Mayhem', 0: 'Custom'
+        };
+        // Maps queue_id → mode bucket used by the stats tabs
+        const QUEUE_MODE = {
+            400: 'normal', 420: 'ranked', 430: 'normal', 440: 'ranked',
+            450: 'aram', 480: 'normal', 490: 'normal',
+            700: 'ranked', 720: 'aram', 900: 'other', 1020: 'other',
+            1300: 'other', 1400: 'other', 1700: 'other', 1710: 'other',
+            1900: 'other', 2300: 'other', 2400: 'aram',
+        };
 
         const CHAMP_KEYS = {
             'Wukong': 'MonkeyKing', 'Nunu & Willump': 'Nunu', "Cho'Gath": 'Chogath',
@@ -352,25 +366,98 @@
         function renderSummonerList(list) {
             const ul = document.getElementById('summoner-list');
             ul.innerHTML = '';
-            list.forEach(({ riot_id, region, last_searched, profileIconId }) => {
+            list.forEach(function(entry) {
+                const riot_id = entry.riot_id;
+                const region = entry.region;
+                const last_searched = entry.last_searched;
+                const profileIconId = entry.profileIconId;
                 const li = document.createElement('li');
-                li.className = 'flex items-center gap-2 px-2 py-2 cursor-pointer hover:bg-slate-700/60 text-sm border-b border-slate-700/30 transition-colors';
+                li.className = 'flex items-center gap-2 px-2 py-2 hover:bg-slate-700/60 text-sm border-b border-slate-700/30 transition-colors group';
                 li.dataset.id = riot_id;
-                const [name, tag] = riot_id.split('#');
-                const iconUrl = profileIconId
-                    ? `${DD}/img/profileicon/${profileIconId}.png`
-                    : `${DD}/img/profileicon/29.png`;
+                const parts = riot_id.split('#');
+                const name = parts[0];
+                const tag = parts[1];
+                const fallbackIcon = DD + '/img/profileicon/29.png';
+                const iconSrc = profileIconId ? (DD + '/img/profileicon/' + profileIconId + '.png') : fallbackIcon;
                 const ago = last_searched ? timeAgo(last_searched) : '';
-                li.innerHTML = `
-                    <img src="${iconUrl}" class="w-8 h-8 rounded shrink-0" onerror="this.src='${DD}/img/profileicon/29.png'">
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium truncate">${name}<span class="text-slate-500 font-normal">#${tag}</span></div>
-                        <div class="text-xs text-slate-500 truncate">${region}${ago ? ' · ' + ago : ''}</div>
-                    </div>`;
-                li.onclick = () => selectSummoner(riot_id, li);
-                if (riot_id === activeSummonerId) li.classList.add('bg-slate-700');
+                const img = document.createElement('img');
+                img.src = iconSrc;
+                img.className = 'w-8 h-8 rounded shrink-0 cursor-pointer';
+                img.onerror = function() { img.src = fallbackIcon; };
+                img.onclick = function() { selectSummoner(riot_id, li); };
+                const info = document.createElement('div');
+                info.className = 'flex-1 min-w-0 cursor-pointer';
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'font-medium truncate';
+                nameDiv.innerHTML = name + '<span class="text-slate-500 font-normal">#' + tag + '</span>';
+                const regionDiv = document.createElement('div');
+                regionDiv.className = 'text-xs text-slate-500 truncate';
+                regionDiv.setAttribute('data-region-label', '');
+                regionDiv.textContent = region + (ago ? ' \u00b7 ' + ago : '');
+                info.appendChild(nameDiv);
+                info.appendChild(regionDiv);
+                info.onclick = function() { selectSummoner(riot_id, li); };
+                const editBtn = document.createElement('button');
+                editBtn.className = 'opacity-0 hidden group-hover:opacity-100 transition-opacity p-1 text-slate-500 hover:text-slate-200 shrink-0';
+                editBtn.title = 'Cambiar regi\u00f3n';
+                editBtn.textContent = '\u270e';
+                editBtn.onclick = function(e) { e.stopPropagation(); editSummonerRegion(riot_id, editBtn); };
+                li.appendChild(img);
+                li.appendChild(info);
+                li.appendChild(editBtn);
+                if (riot_id === activeSummonerId) { li.classList.add('bg-slate-700'); }
                 ul.appendChild(li);
             });
+        }
+
+        async function editSummonerRegion(riot_id, btn) {
+            const li = btn.closest('li');
+            const label = li.querySelector('[data-region-label]');
+            const regions = ['LAN', 'LAS', 'NA', 'EUW', 'EUNE', 'BR', 'KR', 'JP', 'OCE', 'TR', 'RU'];
+            const currentRegion = label.textContent.split(' \u00b7 ')[0].trim();
+            const prev = label.textContent;
+
+            const sel = document.createElement('select');
+            sel.className = 'bg-slate-700 text-white text-xs rounded px-1 py-0.5 mr-1';
+            regions.forEach(function(r) {
+                const opt = document.createElement('option');
+                opt.value = r;
+                opt.textContent = r;
+                if (r === currentRegion) { opt.selected = true; }
+                sel.appendChild(opt);
+            });
+            const okBtn = document.createElement('button');
+            okBtn.className = 'text-xs bg-violet-600 hover:bg-violet-500 text-white rounded px-2 py-0.5 mr-1';
+            okBtn.textContent = 'OK';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'text-xs text-slate-400 hover:text-white';
+            cancelBtn.textContent = '\u2715';
+
+            label.textContent = '';
+            label.appendChild(sel);
+            label.appendChild(okBtn);
+            label.appendChild(cancelBtn);
+
+            cancelBtn.onclick = function() { label.textContent = prev; };
+            okBtn.onclick = async function() {
+                const newRegion = sel.value;
+                okBtn.textContent = '\u2026';
+                okBtn.disabled = true;
+                try {
+                    const res = await fetch('/api/db/summoners/' + encodeURIComponent(riot_id) + '/region', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ region: newRegion }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) { alert(data.error || 'Error'); label.textContent = prev; return; }
+                    const iconEl = li.querySelector('img');
+                    if (data.profileIconId) { iconEl.src = DD + '/img/profileicon/' + data.profileIconId + '.png'; }
+                    label.textContent = newRegion;
+                    const s = allSummoners.find(function(x) { return x.riot_id === riot_id; });
+                    if (s) { s.region = newRegion; if (data.profileIconId) { s.profileIconId = data.profileIconId; } }
+                } catch (e) { alert('Error: ' + e); label.textContent = prev; }
+            };
         }
 
         async function selectSummoner(riot_id, el) {
@@ -442,7 +529,16 @@
                 return;
             }
             container.innerHTML = '';
+            let lastBucket = null;
             matches.forEach(m => {
+                const bucket = dateBucket(m.game_creation);
+                if (bucket !== lastBucket) {
+                    lastBucket = bucket;
+                    const sep = document.createElement('div');
+                    sep.className = 'px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-800/60 sticky top-0 z-10';
+                    sep.textContent = bucket;
+                    container.appendChild(sep);
+                }
                 const el = document.createElement('div');
                 el.className = 'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-700/60 transition-colors border-b border-slate-700/30 border-l-2 ' + (m.win ? 'border-l-blue-600' : 'border-l-red-700');
                 const modeLabel = QUEUE_LABEL[m.queue_id] || m.game_mode;
@@ -451,8 +547,7 @@
       <div class="flex-1 min-w-0">
         <div class="text-sm font-medium truncate">${m.champion}</div>
         <div class="text-xs text-slate-400 truncate">${m.kills}/${m.deaths}/${m.assists} · ${modeLabel}</div>
-      </div>
-      <div class="text-xs text-slate-500 shrink-0">${fmtDate(m.game_creation)}</div>`;
+      </div>`;
                 el.onclick = () => selectMatch(m.match_id, el);
                 container.appendChild(el);
             });
@@ -466,7 +561,11 @@
             const losses = s.losses ?? (total - wins);
             const winrate = s.winrate ?? 0;
             const kda = s.avg_kda ?? 0;
-            const avgDur = s.avg_duration ? fmtDuration(s.avg_duration) : (activeStats.avg_duration ? fmtDuration(activeStats.avg_duration) : '—');
+            // Use per-mode avg_duration when available, fall back to global
+            const durSecs = s.avg_duration || (mode === 'all' ? activeStats.avg_duration : null) || activeStats.avg_duration;
+            const avgDur = durSecs ? fmtDuration(durSecs) : '—';
+            // Use per-mode top_champions when available
+            const champs = (mode === 'all' ? activeStats.top_champions : (s.top_champions?.length ? s.top_champions : activeStats.top_champions)) || [];
 
             document.getElementById('stats-row').innerHTML = `
     <div class="bg-slate-800 rounded-lg p-3 text-center">
@@ -483,7 +582,7 @@
     </div>`;
 
             renderWinrateChart(wins, losses, avgDur);
-            renderChampGrid(activeStats.top_champions || []);
+            renderChampGrid(champs);
             renderProfileHeader();
             runDurationAnalysis(); // auto-load on profile open
         }
@@ -599,6 +698,11 @@
             activeMode = mode;
             setActiveTab(mode);
             renderProfile(mode);
+            // Filter match list to the chosen mode (show all when 'all')
+            const filtered = mode === 'all'
+                ? activeMatches
+                : activeMatches.filter(m => (QUEUE_MODE[m.queue_id] ?? 'other') === mode);
+            renderMatchList(filtered);
         }
 
         function setActiveTab(mode) {
@@ -768,6 +872,20 @@
 
         const fmtDuration = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
         const fmtDate = ms => new Date(ms).toLocaleDateString();
+
+        function dateBucket(ms) {
+            const now = new Date();
+            const d = new Date(ms);
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const diff = todayStart - new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const days = diff / 86400000;
+            if (days === 0) return 'Hoy';
+            if (days === 1) return 'Ayer';
+            if (days < 7) return 'Esta semana';
+            if (days < 14) return 'La semana pasada';
+            if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return 'Este mes';
+            return d.toLocaleDateString('es', { month: 'long', year: 'numeric' });
+        }
 
         function timeAgo(iso) {
             const diff = Date.now() - new Date(iso).getTime();

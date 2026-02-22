@@ -33,11 +33,12 @@ async def _get_champion_name(champion_id: int) -> str:
 
 
 QUEUE_ID_TO_MODE = {
-    400: "Normal Draft",  420: "Ranked Solo/Duo",  430: "Normal Blind",
-    440: "Ranked Flex",   450: "ARAM",              700: "Clash",
-    900: "URF",           1020: "One for All",      1300: "Nexus Blitz",
-    1400: "Ultimate Spellbook", 1700: "Arena", 1900: "URF",
-    2400: "ARAM: Caos",
+    400: "Normal Draft",        420: "Ranked Solo/Duo",     430: "Normal Blind",
+    440: "Ranked Flex",         450: "ARAM",                480: "Partida rápida",
+    490: "Normal (Quickplay)",  700: "Clash",               720: "Clash ARAM",
+    900: "URF",                 1020: "One for All",        1300: "Nexus Blitz",
+    1400: "Ultimate Spellbook", 1700: "Arena",              1710: "Arena (16j)",
+    1900: "URF Pick",           2300: "Brawl",              2400: "ARAM: Caos",
 }
 
 
