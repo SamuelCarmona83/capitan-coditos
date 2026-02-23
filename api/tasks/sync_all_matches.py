@@ -38,6 +38,7 @@ def sync_all_matches():
             store_summoner_profile,
             get_cached_match_ids_for_puuid,
             store_match,
+            clear_analysis_cache,
         )
         from services.riot_api import (
             get_summoner_data_sync,
@@ -93,6 +94,10 @@ def sync_all_matches():
                         store_match(match_id, data)
                         new_stored += 1
 
+                # Invalidate cached analysis when new matches were added
+                if missing:
+                    clear_analysis_cache(riot_id)
+
             except Exception as exc:
                 errors += 1
                 print(f"[sync] Error processing {riot_id}: {exc}")
@@ -101,4 +106,4 @@ def sync_all_matches():
                       current_summoner="", finished_at=datetime.now(timezone.utc).isoformat())
         print(f"[sync] Done. New matches stored: {new_stored}, errors: {errors}")
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())

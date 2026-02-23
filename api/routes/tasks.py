@@ -50,12 +50,37 @@ def start_duration_stats():
     riot_id = data.get("riot_id")
     count = int(data.get("count", 50))
     region = data.get("region", "LAN")
+    force = data.get("force", False)
 
     if not riot_id:
         return jsonify({"error": "riot_id is required"}), 400
 
+    if force:
+        from database.match_cache import clear_analysis_cache
+        clear_analysis_cache(riot_id, "duration")
+
     from tasks.duration_stats import run_duration_stats_task
     task = run_duration_stats_task.apply_async(args=[riot_id, count, region])
+    return jsonify({"task_id": task.id}), 202
+
+
+@tasks_bp.post("/heatmap")
+def start_heatmap():
+    data = request.get_json(force=True) or {}
+    riot_id = data.get("riot_id")
+    count = int(data.get("count", 20))
+    region = data.get("region", "LAN")
+    force = data.get("force", False)
+
+    if not riot_id:
+        return jsonify({"error": "riot_id is required"}), 400
+
+    if force:
+        from database.match_cache import clear_analysis_cache
+        clear_analysis_cache(riot_id, "heatmap")
+
+    from tasks.heatmap import run_heatmap_task
+    task = run_heatmap_task.apply_async(args=[riot_id, count, region])
     return jsonify({"task_id": task.id}), 202
 
 

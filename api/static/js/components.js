@@ -240,3 +240,62 @@ function SkeletonChampItem() {
 function skeletonMatchList() { return Array.from({ length: 8 }, SkeletonMatchItem).join(''); }
 function skeletonStatsRow()  { return Array.from({ length: 3 }, SkeletonStatCard).join(''); }
 function skeletonChampGrid() { return Array.from({ length: 8 }, SkeletonChampItem).join(''); }
+
+/* ── Timeline per-minute charts container ────────────────────────── */
+
+function TimelineChartsContainer() {
+    return `
+    <div class="flex flex-col gap-3">
+      <div class="bg-slate-700/40 rounded-lg p-2.5">
+        <div class="flex items-center gap-1.5 mb-1.5">
+          <span class="w-2 h-2 rounded-full bg-yellow-400"></span>
+          <span class="text-[11px] text-slate-400 font-semibold">Gold / min</span>
+        </div>
+        <div class="relative" style="height:110px"><canvas id="chart-gold-pm"></canvas></div>
+      </div>
+      <div class="bg-slate-700/40 rounded-lg p-2.5">
+        <div class="flex items-center gap-1.5 mb-1.5">
+          <span class="w-2 h-2 rounded-full bg-red-400"></span>
+          <span class="text-[11px] text-slate-400 font-semibold">Damage / min</span>
+        </div>
+        <div class="relative" style="height:110px"><canvas id="chart-damage-pm"></canvas></div>
+      </div>
+      <div class="bg-slate-700/40 rounded-lg p-2.5">
+        <div class="flex items-center gap-1.5 mb-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span class="text-[11px] text-slate-400 font-semibold">CS / min</span>
+        </div>
+        <div class="relative" style="height:110px"><canvas id="chart-cs-pm"></canvas></div>
+      </div>
+    </div>`;
+}
+
+function MatchTimelineCharts() {
+    return `
+    <div class="bg-slate-800/60 rounded-lg p-4 mt-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">📈 Player Timeline</div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="bg-slate-700/40 rounded-lg p-2.5">
+          <div class="flex items-center gap-1.5 mb-1.5">
+            <span class="w-2 h-2 rounded-full bg-yellow-400"></span>
+            <span class="text-[11px] text-slate-400 font-semibold">Gold</span>
+          </div>
+          <div class="relative" style="height:120px"><canvas id="match-chart-gold"></canvas></div>
+        </div>
+        <div class="bg-slate-700/40 rounded-lg p-2.5">
+          <div class="flex items-center gap-1.5 mb-1.5">
+            <span class="w-2 h-2 rounded-full bg-red-400"></span>
+            <span class="text-[11px] text-slate-400 font-semibold">Damage</span>
+          </div>
+          <div class="relative" style="height:120px"><canvas id="match-chart-damage"></canvas></div>
+        </div>
+        <div class="bg-slate-700/40 rounded-lg p-2.5">
+          <div class="flex items-center gap-1.5 mb-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="text-[11px] text-slate-400 font-semibold">CS</span>
+          </div>
+          <div class="relative" style="height:120px"><canvas id="match-chart-cs"></canvas></div>
+        </div>
+      </div>
+    </div>`;
+}

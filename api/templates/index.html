@@ -254,6 +254,29 @@
                     </div>
                 </div>
 
+                <!-- Position Heatmap + Per-Minute Metrics -->
+                <div class="bg-slate-800 rounded-lg p-4 mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <div class="text-xs text-slate-500 uppercase tracking-wider flex items-center gap-1.5">🗺️ Position Heatmap
+                                <span id="timeline-meta" class="text-slate-600 font-normal"></span>
+                            </div>
+                            <div id="heatmap-meta" class="text-xs text-slate-600 mt-0.5"></div>
+                        </div>
+                        <button id="heatmap-btn" onclick="runHeatmapAnalysis(true)"
+                            class="text-xs text-violet-400 hover:text-violet-300 transition-colors">&#8635;</button>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <!-- Left: minimap -->
+                        <div id="heatmap-content" class="flex items-center justify-center" style="min-height:120px">
+                            <span class="text-slate-600 text-xs">Select a summoner</span>
+                        </div>
+                        <!-- Right: per-minute charts -->
+                        <div id="timeline-content" class="hidden">
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Match History (integrated into profile) -->
                 <div class="mt-2">
                     <div class="flex items-center justify-between mb-2">

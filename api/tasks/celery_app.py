@@ -18,6 +18,7 @@ celery_app = Celery(
         "tasks.duration_stats",
         "tasks.sync_all_matches",
         "tasks.backfill_summoner_ids",
+        "tasks.heatmap",
     ],
 )
 

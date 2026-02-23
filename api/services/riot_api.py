@@ -90,6 +90,31 @@ def _fetch_match_safe_sync(match_id: str, region: str = None) -> dict | None:
     return None
 
 
+def _fetch_timeline_safe_sync(match_id: str, region: str = None) -> dict | None:
+    """Sync fetch match timeline with 3 retries. Returns None on permanent failure."""
+    routing, _ = get_region_routing(region)
+    url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    for attempt in range(3):
+        try:
+            r = _requests.get(url, headers=headers, timeout=15)
+            if r.status_code == 429:
+                time.sleep(int(r.headers.get("Retry-After", 3)) + 1)
+                continue
+            if r.status_code == 404:
+                return None
+            if r.status_code >= 500:
+                time.sleep(2)
+                continue
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            if attempt == 2:
+                return None
+            time.sleep(1)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Account / summoner lookups  (cache-aware)
 # ---------------------------------------------------------------------------
@@ -617,3 +642,154 @@ async def get_game_duration_stats(riot_id: str, count: int = 50,
         "avg_duration_min": (total_duration_sec / total_analyzed) / 60.0,
     }
     return buckets, general_stats, summoner_profile
+
+
+# ---------------------------------------------------------------------------
+# Position heatmap data  (timeline endpoint)
+# ---------------------------------------------------------------------------
+
+async def get_position_heatmap_data(
+    riot_id: str, count: int = 20, progress_callback=None, region: str = None
+):
+    """Fetch position data + per-minute metrics across multiple matches.
+
+    Returns (positions, matches_analyzed, total_frames, metrics, summoner_profile).
+    ``positions`` is a flat list of [x, y] pairs (game coordinates 0–14820).
+    ``metrics`` contains gold/damage/cs cumulative and per-minute rate averages.
+    Only Summoner's Rift (mapId 11) games with duration ≥ 5 min are included.
+    """
+    puuid, summoner_profile = await _resolve_summoner(riot_id, region)
+
+    # Paginate match IDs (all queues)
+    match_ids: list[str] = []
+    remaining = count
+    start = 0
+    while remaining > 0:
+        batch_size = min(remaining, 100)
+        batch = await asyncio.to_thread(
+            get_match_history_filtered_sync, puuid, batch_size, start,
+            queue=None, match_type=None, region=region,
+        )
+        if not batch:
+            break
+        match_ids.extend(batch)
+        start += batch_size
+        remaining -= batch_size
+        if len(batch) < batch_size:
+            break
+
+    if not match_ids:
+        raise ValueError("No matches found.")
+
+    positions: list[list[int]] = []
+    matches_analyzed = 0
+    errors = 0
+
+    # Per-minute metric accumulators (one list per match)
+    gold_per_min_series: list[list[int]] = []
+    damage_per_min_series: list[list[int]] = []
+    cs_per_min_series: list[list[int]] = []
+
+    for i, match_id in enumerate(match_ids):
+        if progress_callback and i % 3 == 0:
+            await progress_callback(i, len(match_ids))
+
+        try:
+            # Use cached match data to filter non-SR games before timeline call
+            match_data = await fetch_match_cached(match_id, region)
+            if not match_data:
+                errors += 1
+                continue
+
+            info = match_data.get("info", {})
+            if info.get("mapId") != 11:
+                continue  # Skip non-Summoner's Rift
+            if info.get("gameDuration", 0) < 300:
+                continue  # Skip remakes (< 5 min)
+
+            # Check timeline cache first, then Riot API
+            from database.match_cache import get_timeline, store_timeline
+            timeline = get_timeline(match_id)
+            if not timeline:
+                # Rate limit before timeline API call
+                if matches_analyzed > 0:
+                    await asyncio.sleep(1.3)
+
+                timeline = await asyncio.to_thread(
+                    _fetch_timeline_safe_sync, match_id, region
+                )
+                if not timeline:
+                    errors += 1
+                    continue
+                # Persist for future use
+                store_timeline(match_id, timeline)
+
+            # Map puuid → participantId via timeline metadata
+            meta_parts = timeline.get("metadata", {}).get("participants", [])
+            if puuid not in meta_parts:
+                continue
+            p_id = str(meta_parts.index(puuid) + 1)
+
+            match_gold = []
+            match_damage = []
+            match_cs = []
+
+            for frame in timeline.get("info", {}).get("frames", []):
+                pf = frame.get("participantFrames", {}).get(p_id)
+                if not pf:
+                    continue
+                if "position" in pf:
+                    positions.append([pf["position"]["x"], pf["position"]["y"]])
+                # Per-minute metrics (cumulative values from Riot)
+                match_gold.append(pf.get("totalGold", 0))
+                dmg_stats = pf.get("damageStats", {})
+                match_damage.append(dmg_stats.get("totalDamageDoneToChampions", 0))
+                match_cs.append(
+                    pf.get("minionsKilled", 0) + pf.get("jungleMinionsKilled", 0)
+                )
+
+            if match_gold:
+                gold_per_min_series.append(match_gold)
+                damage_per_min_series.append(match_damage)
+                cs_per_min_series.append(match_cs)
+
+            matches_analyzed += 1
+
+        except Exception:
+            errors += 1
+            if errors > 5:
+                await asyncio.sleep(3)
+
+    # ── Compute averaged per-minute curves ────────────────────────
+    def _average_series(series_list: list[list[int]]) -> list[int]:
+        if not series_list:
+            return []
+        max_len = max(len(s) for s in series_list)
+        result = []
+        for minute in range(max_len):
+            vals = [s[minute] for s in series_list if minute < len(s)]
+            result.append(round(sum(vals) / len(vals)) if vals else 0)
+        return result
+
+    def _to_per_minute_rate(cumulative: list[int]) -> list[int]:
+        if len(cumulative) < 2:
+            return cumulative
+        return [cumulative[0]] + [
+            max(0, cumulative[i] - cumulative[i - 1])
+            for i in range(1, len(cumulative))
+        ]
+
+    avg_gold = _average_series(gold_per_min_series)
+    avg_damage = _average_series(damage_per_min_series)
+    avg_cs = _average_series(cs_per_min_series)
+
+    metrics = {
+        "gold_cumulative": avg_gold,
+        "gold_per_min": _to_per_minute_rate(avg_gold),
+        "damage_cumulative": avg_damage,
+        "damage_per_min": _to_per_minute_rate(avg_damage),
+        "cs_cumulative": avg_cs,
+        "cs_per_min": _to_per_minute_rate(avg_cs),
+    }
+
+    return positions, matches_analyzed, len(positions), metrics, summoner_profile

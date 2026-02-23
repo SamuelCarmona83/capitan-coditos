@@ -71,6 +71,45 @@ def store_match(match_id: str, data: dict):
 
 
 # ---------------------------------------------------------------------------
+# Timeline cache  (immutable, same as match data → no TTL)
+# ---------------------------------------------------------------------------
+
+def get_timeline(match_id: str) -> Optional[dict]:
+    """Return cached timeline data or None.  Redis L1 → MongoDB L2."""
+    key = f"timeline:{match_id}"
+    try:
+        raw = _redis().get(key)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+
+    doc = get_db()["timelines"].find_one({"_id": match_id})
+    if doc:
+        data = doc["data"]
+        try:
+            _redis().set(key, json.dumps(data))
+        except Exception:
+            pass
+        return data
+    return None
+
+
+def store_timeline(match_id: str, data: dict):
+    """Persist timeline data to MongoDB and warm Redis."""
+    db = get_db()
+    db["timelines"].update_one(
+        {"_id": match_id},
+        {"$setOnInsert": {"_id": match_id, "data": data, "stored_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    try:
+        _redis().set(f"timeline:{match_id}", json.dumps(data))
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Summoner profile cache  (PUUID + Summoner V4 profile)
 # ---------------------------------------------------------------------------
 
@@ -109,6 +148,48 @@ def store_summoner_profile(riot_id: str, puuid: str, profile: dict):
     result = {"puuid": puuid, "profile": profile}
     try:
         _redis().setex(f"puuid:{riot_id}", 86400, json.dumps(result))
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Analysis result cache  (Redis-only, with TTL)
+# ---------------------------------------------------------------------------
+
+_ANALYSIS_TTL = {
+    "stats": 1800,      # 30 min – recomputed from local DB, cheap-ish
+    "duration": 21600,  # 6 h   – expensive Riot timeline calls
+    "heatmap": 21600,   # 6 h   – expensive Riot timeline calls
+}
+
+def get_analysis_cache(riot_id: str, analysis_type: str) -> Optional[dict]:
+    """Return cached analysis result or None."""
+    key = f"analysis:{analysis_type}:{riot_id}"
+    try:
+        raw = _redis().get(key)
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def set_analysis_cache(riot_id: str, analysis_type: str, data: dict, ttl: int = None):
+    """Store analysis result in Redis with TTL."""
+    key = f"analysis:{analysis_type}:{riot_id}"
+    if ttl is None:
+        ttl = _ANALYSIS_TTL.get(analysis_type, 3600)
+    try:
+        _redis().setex(key, ttl, json.dumps(data))
+    except Exception:
+        pass
+
+
+def clear_analysis_cache(riot_id: str, analysis_type: str = None):
+    """Clear analysis caches for a summoner.  If type is None, clear all types."""
+    try:
+        r = _redis()
+        types = [analysis_type] if analysis_type else list(_ANALYSIS_TTL.keys())
+        for t in types:
+            r.delete(f"analysis:{t}:{riot_id}")
     except Exception:
         pass
 

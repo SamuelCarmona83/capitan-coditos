@@ -15,6 +15,17 @@ const DURATION_COLORS = ['#22c55e', '#eab308', '#f97316', '#ef4444', '#6b7280'];
 let durationPollTimer = null;
 const durationCache   = {};
 
+/* ── Heatmap task state ──────────────────────────────────────────── */
+let heatmapPollTimer = null;
+const heatmapCache   = {};
+let _heatPalette     = null;
+
+/* ── Timeline per-minute chart instances ──────────────────────────── */
+let chartGoldPM = null, chartDamagePM = null, chartCSPM = null;
+
+/* ── Match detail timeline chart instances ────────────────────────── */
+let matchChartGold = null, matchChartDamage = null, matchChartCS = null;
+
 /* ── Sync progress polling state ─────────────────────────────────── */
 let syncPollTimer = null;
 
@@ -246,6 +257,21 @@ async function selectSummoner(riot_id, el) {
     if (durationPollTimer) { clearInterval(durationPollTimer); durationPollTimer = null; }
     if (chartDUR) { chartDUR.destroy(); chartDUR = null; }
 
+    // Reset heatmap section
+    if (heatmapPollTimer) { clearInterval(heatmapPollTimer); heatmapPollTimer = null; }
+    document.getElementById('heatmap-content').innerHTML =
+        '<span class="text-slate-600 text-xs animate-pulse">Loading\u2026</span>';
+    document.getElementById('heatmap-btn').disabled = false;
+    const _hm = document.getElementById('heatmap-meta');
+    if (_hm) _hm.textContent = '';
+
+    // Reset timeline charts
+    if (chartGoldPM)   { chartGoldPM.destroy();   chartGoldPM   = null; }
+    if (chartDamagePM) { chartDamagePM.destroy(); chartDamagePM = null; }
+    if (chartCSPM)     { chartCSPM.destroy();     chartCSPM     = null; }
+    const _tlCon = document.getElementById('timeline-content');
+    if (_tlCon) { _tlCon.innerHTML = ''; _tlCon.classList.add('hidden'); }
+
     const summoner = allSummoners.find(s => s.riot_id === riot_id);
     if (summoner?.profileIconId) {
         document.getElementById('profile-icon').src = `${DD}/img/profileicon/${summoner.profileIconId}.png`;
@@ -337,6 +363,7 @@ function renderProfile(mode) {
     renderChampGrid(champs);
     renderProfileHeader();
     runDurationAnalysis();
+    runHeatmapAnalysis();
 }
 
 function renderProfileHeader() {
@@ -440,6 +467,9 @@ async function selectMatch(match_id, el) {
     el.classList.add('bg-slate-700');
     activeMatchEl = el;
 
+    // Destroy previous match charts
+    _destroyMatchCharts();
+
     $('profile-view').classList.add('hidden');
     $('match-view').classList.remove('hidden');
     mount('match-content', '<div class="flex items-center justify-center py-12 text-slate-400 text-sm"><span class="inline-block w-4 h-4 border-2 border-slate-500 border-t-slate-200 rounded-full animate-spin mr-2"></span>Loading match\u2026</div>');
@@ -465,6 +495,8 @@ async function selectMatch(match_id, el) {
     const maxDmg  = Math.max(...data.participants.map(p => p.totalDamageDealtToChampions), 1);
     const maxGold = Math.max(...data.participants.map(p => p.goldEarned), 1);
 
+    const timelineHtml = data.timeline_metrics ? MatchTimelineCharts() : '';
+
     mount('match-content', `
     ${MatchDetailHeader(data.focused_participant, data.game_duration, data.game_mode_label, data.game_creation)}
     <div class="flex justify-end mb-3">
@@ -477,14 +509,74 @@ async function selectMatch(match_id, el) {
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
       ${TeamTable(blue, 'Blue', data.blue_win,  data.focused_participant, maxDmg, maxGold, data.game_duration)}
       ${TeamTable(red,  'Red',  !data.blue_win, data.focused_participant, maxDmg, maxGold, data.game_duration)}
-    </div>`);
+    </div>
+    ${timelineHtml}`);
+
+    // Render match-level timeline charts if data is available
+    if (data.timeline_metrics) {
+        _renderMatchTimeline(data.timeline_metrics);
+    }
 
     setMobilePanel('match-detail');
+}
+
+function _destroyMatchCharts() {
+    if (matchChartGold)   { matchChartGold.destroy();   matchChartGold   = null; }
+    if (matchChartDamage) { matchChartDamage.destroy(); matchChartDamage = null; }
+    if (matchChartCS)     { matchChartCS.destroy();     matchChartCS     = null; }
+}
+
+function _renderMatchTimeline(metrics) {
+    if (!metrics || !metrics.gold_per_min || !metrics.gold_per_min.length) return;
+
+    const labels = metrics.gold_cumulative.map((_, i) => `${i}m`);
+
+    const baseOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: '#1e293b',
+                titleColor: '#94a3b8',
+                bodyColor: '#e2e8f0',
+                borderColor: '#334155',
+                borderWidth: 1,
+            },
+        },
+        scales: {
+            x: { ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', font: { size: 9 }, callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v }, grid: { color: '#1e293b' } },
+        },
+        animation: { duration: 400 },
+    };
+
+    function _mk(id, cumData, rateData, cumColor, rateColor, cumLabel, rateLabel) {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        return new Chart(el, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: cumLabel, data: cumData, borderColor: cumColor, backgroundColor: cumColor + '18', fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 3, borderWidth: 2 },
+                    { label: rateLabel, data: rateData, borderColor: rateColor, backgroundColor: rateColor + '00', borderDash: [4, 3], tension: 0.35, pointRadius: 0, pointHoverRadius: 3, borderWidth: 1.5 },
+                ],
+            },
+            options: baseOpts,
+        });
+    }
+
+    matchChartGold   = _mk('match-chart-gold',   metrics.gold_cumulative,   metrics.gold_per_min,   '#fbbf24', '#fbbf2488', 'Total Gold', 'Gold/min');
+    matchChartDamage = _mk('match-chart-damage', metrics.damage_cumulative, metrics.damage_per_min, '#f87171', '#f8717188', 'Total Damage', 'Dmg/min');
+    matchChartCS     = _mk('match-chart-cs',     metrics.cs_cumulative,     metrics.cs_per_min,     '#34d399', '#34d39988', 'Total CS',    'CS/min');
 }
 
 function closeMatch() {
     if (activeMatchEl) activeMatchEl.classList.remove('bg-slate-700');
     activeMatchEl = null;
+    _destroyMatchCharts();
     $('match-view').classList.add('hidden');
     $('profile-strip').classList.add('hidden');
     $('profile-view').classList.remove('hidden');
@@ -508,6 +600,10 @@ function closeProfile() {
     if (durationPollTimer) { clearInterval(durationPollTimer); durationPollTimer = null; }
     if (chartDUR) { chartDUR.destroy(); chartDUR = null; }
     if (chartWR)  { chartWR.destroy();  chartWR  = null; }
+    if (heatmapPollTimer) { clearInterval(heatmapPollTimer); heatmapPollTimer = null; }
+    if (chartGoldPM)   { chartGoldPM.destroy();   chartGoldPM   = null; }
+    if (chartDamagePM) { chartDamagePM.destroy(); chartDamagePM = null; }
+    if (chartCSPM)     { chartCSPM.destroy();     chartCSPM     = null; }
     const _dm = document.getElementById('duration-meta');
     if (_dm) _dm.innerHTML = '';
     document.getElementById('duration-content').innerHTML =
@@ -660,17 +756,35 @@ async function submitModal() {
 
 async function runDurationAnalysis(force = false) {
     if (!activeSummonerId) return;
+
+    // 1. JS in-memory cache
     if (!force && durationCache[activeSummonerId]) {
         renderDurationResult(durationCache[activeSummonerId]);
         return;
     }
-    if (durationPollTimer) { clearInterval(durationPollTimer); durationPollTimer = null; }
 
     const btn     = document.getElementById('duration-btn');
     const content = document.getElementById('duration-content');
     btn.disabled  = true;
     btn.style.animation  = 'spin 0.8s linear infinite';
-    content.innerHTML    = `<div class="absolute inset-0 flex items-center justify-center text-slate-500 text-xs animate-pulse">Fetching\u2026</div>`;
+    content.innerHTML    = `<div class="absolute inset-0 flex items-center justify-center text-slate-500 text-xs animate-pulse">Loading\u2026</div>`;
+
+    // 2. Server-side Redis cache (instant if available)
+    if (!force) {
+        try {
+            const sc = await fetch(`/api/db/analysis-cache?riot_id=${encodeURIComponent(activeSummonerId)}&type=duration`).then(r => r.json());
+            if (sc.cached) {
+                btn.disabled = false; btn.style.animation = '';
+                durationCache[activeSummonerId] = sc.result;
+                renderDurationResult(sc.result);
+                return;
+            }
+        } catch (_) { /* fall through to task */ }
+    }
+
+    // 3. No cache — enqueue Celery task
+    if (durationPollTimer) { clearInterval(durationPollTimer); durationPollTimer = null; }
+    content.innerHTML = `<div class="absolute inset-0 flex items-center justify-center text-slate-500 text-xs animate-pulse">Fetching\u2026</div>`;
 
     const summoner = allSummoners.find(s => s.riot_id === activeSummonerId);
     const region   = summoner?.region ?? 'LAN';
@@ -679,7 +793,7 @@ async function runDurationAnalysis(force = false) {
         const res = await fetch('/api/tasks/duration-stats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ riot_id: activeSummonerId, count: 50, region })
+            body: JSON.stringify({ riot_id: activeSummonerId, count: 50, region, force: !!force })
         }).then(r => r.json());
         taskId = res.task_id;
     } catch (e) {
@@ -762,6 +876,293 @@ function renderDurationResult(result) {
             animation: { duration: 500 }
         }
     });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   POSITION HEATMAP
+═══════════════════════════════════════════════════════════════════ */
+
+function getHeatPalette() {
+    if (_heatPalette) return _heatPalette;
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 1;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 256, 0);
+    g.addColorStop(0.0,  '#0000ff');
+    g.addColorStop(0.15, '#00bbff');
+    g.addColorStop(0.35, '#00ffaa');
+    g.addColorStop(0.55, '#aaff00');
+    g.addColorStop(0.75, '#ffdd00');
+    g.addColorStop(1.0,  '#ff0000');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 1);
+    const data = ctx.getImageData(0, 0, 256, 1).data;
+    _heatPalette = [];
+    for (let i = 0; i < 256; i++) _heatPalette.push([data[i*4], data[i*4+1], data[i*4+2]]);
+    return _heatPalette;
+}
+
+async function runHeatmapAnalysis(force = false) {
+    if (!activeSummonerId) return;
+
+    // 1. JS in-memory cache
+    if (!force && heatmapCache[activeSummonerId]) {
+        console.log('[HEATMAP] JS cache hit for', activeSummonerId);
+        renderHeatmapResult(heatmapCache[activeSummonerId]);
+        return;
+    }
+
+    const btn     = document.getElementById('heatmap-btn');
+    const content = document.getElementById('heatmap-content');
+    btn.disabled  = true;
+    btn.style.animation = 'spin 0.8s linear infinite';
+    content.innerHTML   = '<span class="text-slate-500 text-xs animate-pulse">Loading\u2026</span>';
+
+    // 2. Server-side Redis cache (instant if available)
+    if (!force) {
+        try {
+            const sc = await fetch(`/api/db/analysis-cache?riot_id=${encodeURIComponent(activeSummonerId)}&type=heatmap`).then(r => r.json());
+            console.log('[HEATMAP] server cache response:', sc.cached, 'result keys:', sc.result ? Object.keys(sc.result) : 'N/A');
+            if (sc.cached) {
+                btn.disabled = false; btn.style.animation = '';
+                heatmapCache[activeSummonerId] = sc.result;
+                renderHeatmapResult(sc.result);
+                return;
+            }
+        } catch (_) { /* fall through to task */ }
+    }
+
+    // 3. No cache — enqueue Celery task
+    if (heatmapPollTimer) { clearInterval(heatmapPollTimer); heatmapPollTimer = null; }
+    content.innerHTML = '<span class="text-slate-500 text-xs animate-pulse">Fetching timeline data\u2026</span>';
+
+    const summoner = allSummoners.find(s => s.riot_id === activeSummonerId);
+    const region   = summoner?.region ?? 'LAN';
+    let taskId;
+    try {
+        const res = await fetch('/api/tasks/heatmap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ riot_id: activeSummonerId, count: 20, region, force: !!force })
+        }).then(r => r.json());
+        taskId = res.task_id;
+    } catch (e) {
+        content.innerHTML = `<span class="text-red-400 text-xs">${e.message}</span>`;
+        btn.disabled = false; btn.style.animation = ''; return;
+    }
+
+    heatmapPollTimer = setInterval(async () => {
+        const r = await fetch(`/api/tasks/${taskId}`).then(r => r.json()).catch(() => null);
+        if (!r) return;
+        if (r.status === 'PROGRESS' && r.progress) {
+            content.innerHTML = `<span class="text-slate-500 text-xs animate-pulse">${r.progress.current}/${r.progress.total} matches\u2026</span>`;
+        } else if (r.status === 'SUCCESS') {
+            clearInterval(heatmapPollTimer); heatmapPollTimer = null;
+            btn.disabled = false; btn.style.animation = '';
+            heatmapCache[activeSummonerId] = r.result;
+            renderHeatmapResult(r.result);
+        } else if (r.status === 'FAILURE') {
+            clearInterval(heatmapPollTimer); heatmapPollTimer = null;
+            btn.disabled = false; btn.style.animation = '';
+            content.innerHTML = `<span class="text-red-400 text-xs">${r.error || 'Analysis failed'}</span>`;
+        }
+    }, 2500);
+}
+
+function renderHeatmapResult(result) {
+    const content = document.getElementById('heatmap-content');
+    const meta    = document.getElementById('heatmap-meta');
+
+    if (!result || result.error) {
+        content.innerHTML = `<span class="text-red-400 text-sm">${result?.error || 'No data'}</span>`;
+        return;
+    }
+
+    const positions = result.positions || [];
+    if (!positions.length) {
+        content.innerHTML = '<span class="text-slate-500 text-xs">No position data available</span>';
+        return;
+    }
+
+    if (meta) meta.textContent = `${result.matches_analyzed} games \u00b7 ${positions.length} frames \u00b7 Summoner\u2019s Rift`;
+
+    // Size canvas to fill container width (square)
+    const containerW = content.clientWidth || 400;
+    const canvasSize = Math.min(containerW, 512);
+    content.innerHTML = `<canvas id="heatmap-canvas" width="${canvasSize}" height="${canvasSize}" class="rounded-lg mx-auto block" style="max-width:100%"></canvas>`;
+
+    const canvas = document.getElementById('heatmap-canvas');
+    const ctx    = canvas.getContext('2d');
+    const S      = canvas.width;
+    const MAP    = 14820;
+
+    const mapImg = new Image();
+    mapImg.crossOrigin = 'anonymous';
+
+    const drawHeat = () => {
+        // Darken minimap slightly so heat colours pop
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(0, 0, S, S);
+
+        // Build grayscale heat layer via radial gradient dots
+        const heat = document.createElement('canvas');
+        heat.width = heat.height = S;
+        const hctx = heat.getContext('2d');
+
+        const r = Math.max(10, Math.round(S / 28));
+        const tpl = document.createElement('canvas');
+        tpl.width = tpl.height = r * 2;
+        const tctx = tpl.getContext('2d');
+        const grad = tctx.createRadialGradient(r, r, 0, r, r, r);
+        grad.addColorStop(0, 'rgba(0,0,0,1)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        tctx.fillStyle = grad;
+        tctx.fillRect(0, 0, r * 2, r * 2);
+
+        const dotAlpha = Math.min(0.3, Math.max(0.04, 100 / positions.length));
+        for (const [gx, gy] of positions) {
+            const cx = (gx / MAP) * S;
+            const cy = (1 - gy / MAP) * S;
+            hctx.globalAlpha = dotAlpha;
+            hctx.drawImage(tpl, cx - r, cy - r);
+        }
+
+        // Colorize via alpha → palette mapping
+        const imgData = hctx.getImageData(0, 0, S, S);
+        const d       = imgData.data;
+        const palette = getHeatPalette();
+
+        // Auto-scale: find max alpha to normalize
+        let maxA = 0;
+        for (let i = 3; i < d.length; i += 4) { if (d[i] > maxA) maxA = d[i]; }
+        const scale = maxA > 0 ? 255 / maxA : 1;
+
+        for (let i = 0; i < d.length; i += 4) {
+            const a = d[i + 3];
+            if (a < 3) { d[i+3] = 0; continue; }
+            const idx = Math.min(255, Math.round(a * scale));
+            const [cr, cg, cb] = palette[idx];
+            d[i] = cr; d[i+1] = cg; d[i+2] = cb;
+            d[i+3] = Math.min(220, Math.round(idx * 0.78) + 40);
+        }
+
+        hctx.putImageData(imgData, 0, 0);
+        ctx.drawImage(heat, 0, 0);
+    };
+
+    mapImg.onload = () => { ctx.drawImage(mapImg, 0, 0, S, S); drawHeat(); };
+    mapImg.onerror = () => {
+        // Fallback: dark green-ish background
+        ctx.fillStyle = '#0d1117';
+        ctx.fillRect(0, 0, S, S);
+        drawHeat();
+    };
+    mapImg.src = `${DD}/img/map/map11.png`;
+
+    // Render per-minute metrics if available
+    console.log('[HEATMAP] result.metrics exists?', !!result.metrics, 'keys:', result.metrics ? Object.keys(result.metrics) : 'N/A');
+    if (result.metrics) {
+        renderTimelineMetrics(result.metrics, result.matches_analyzed);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TIMELINE PER-MINUTE METRICS
+═══════════════════════════════════════════════════════════════════ */
+
+function renderTimelineMetrics(metrics, matchCount) {
+    const container = $('timeline-content');
+    console.log('[TIMELINE] called. container:', !!container, 'metrics:', !!metrics);
+    if (!container) return;
+
+    // Guard: skip if no actual data
+    if (!metrics || !metrics.gold_per_min || !metrics.gold_per_min.length) {
+        console.log('[TIMELINE] empty data guard triggered. gold_per_min:', metrics?.gold_per_min);
+        container.classList.add('hidden');
+        return;
+    }
+
+    console.log('[TIMELINE] gold_per_min length:', metrics.gold_per_min.length, 'removing hidden');
+    container.classList.remove('hidden');
+
+    const metaEl = document.getElementById('timeline-meta');
+    if (metaEl) metaEl.textContent = `(avg of ${matchCount} games)`;
+
+    container.innerHTML = TimelineChartsContainer();
+
+    if (chartGoldPM)   { chartGoldPM.destroy();   chartGoldPM   = null; }
+    if (chartDamagePM) { chartDamagePM.destroy(); chartDamagePM = null; }
+    if (chartCSPM)     { chartCSPM.destroy();     chartCSPM     = null; }
+
+    const labels = metrics.gold_per_min.map((_, i) => `${i}m`);
+
+    const baseOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: '#1e293b',
+                titleColor: '#94a3b8',
+                bodyColor: '#e2e8f0',
+                borderColor: '#334155',
+                borderWidth: 1,
+            },
+        },
+        scales: {
+            x: {
+                ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 10 },
+                grid: { color: '#1e293b' },
+            },
+            y: {
+                ticks: { color: '#64748b', font: { size: 9 } },
+                grid: { color: '#1e293b' },
+            },
+        },
+        animation: { duration: 500 },
+    };
+
+    function _makeLineChart(canvasId, data, color, label) {
+        const el = document.getElementById(canvasId);
+        if (!el) return null;
+        return new Chart(el, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label,
+                    data,
+                    borderColor: color,
+                    backgroundColor: color + '22',
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    borderWidth: 2,
+                }],
+            },
+            options: {
+                ...baseOpts,
+                scales: {
+                    ...baseOpts.scales,
+                    y: {
+                        ...baseOpts.scales.y,
+                        ticks: {
+                            ...baseOpts.scales.y.ticks,
+                            callback: v => v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v,
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    chartGoldPM   = _makeLineChart('chart-gold-pm',   metrics.gold_per_min,   '#fbbf24', 'Gold/min');
+    chartDamagePM = _makeLineChart('chart-damage-pm', metrics.damage_per_min, '#f87171', 'Damage/min');
+    chartCSPM     = _makeLineChart('chart-cs-pm',     metrics.cs_per_min,     '#34d399', 'CS/min');
+    console.log('[TIMELINE] charts created:', !!chartGoldPM, !!chartDamagePM, !!chartCSPM);
+    console.log('[TIMELINE] container hidden?', container.classList.contains('hidden'), 'display:', getComputedStyle(container).display);
 }
 
 /* ═══════════════════════════════════════════════════════════════════

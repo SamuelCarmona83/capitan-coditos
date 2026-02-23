@@ -1,4 +1,4 @@
-"""Celery task: game duration distribution analysis."""
+"""Celery task: position heatmap analysis via Riot timeline endpoint."""
 import asyncio
 import os
 
@@ -14,16 +14,16 @@ def _ensure_connections():
     init_redis(os.getenv("REDIS_URL", "redis://redis:6379/0"))
 
 
-@celery_app.task(bind=True, name="tasks.duration_stats.run_duration_stats_task", max_retries=0)
-def run_duration_stats_task(self: Task, riot_id: str, count: int, region: str):
+@celery_app.task(bind=True, name="tasks.heatmap.run_heatmap_task", max_retries=0)
+def run_heatmap_task(self: Task, riot_id: str, count: int, region: str):
     _ensure_connections()
 
     async def _run():
-        from services.riot_api import get_game_duration_stats
+        from services.riot_api import get_position_heatmap_data
         from database.match_cache import get_analysis_cache, set_analysis_cache
 
         # Check server-side cache first
-        cached = get_analysis_cache(riot_id, "duration")
+        cached = get_analysis_cache(riot_id, "heatmap")
         if cached:
             return cached
 
@@ -31,22 +31,25 @@ def run_duration_stats_task(self: Task, riot_id: str, count: int, region: str):
             self.update_state(state="PROGRESS", meta={"current": current, "total": total})
 
         try:
-            buckets, general_stats, summoner_profile = await get_game_duration_stats(
+            positions, matches_analyzed, total_frames, metrics, _ = await get_position_heatmap_data(
                 riot_id, count=count, progress_callback=progress_callback, region=region
             )
         except ValueError as e:
             return {"error": str(e), "riot_id": riot_id}
 
+        if not positions:
+            return {"error": "No position data found", "riot_id": riot_id}
+
         result = {
             "riot_id": riot_id,
-            "buckets": buckets,
-            "general_stats": general_stats,
-            "summoner_profile": summoner_profile,
+            "positions": positions,
+            "matches_analyzed": matches_analyzed,
+            "total_frames": total_frames,
+            "metrics": metrics,
         }
 
         # Cache successful results
-        if "error" not in result:
-            set_analysis_cache(riot_id, "duration", result)
+        set_analysis_cache(riot_id, "heatmap", result)
 
         return result
 

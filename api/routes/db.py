@@ -29,7 +29,7 @@ def cached_matches():
 @db_bp.get("/match/<match_id>")
 def cached_match_detail(match_id: str):
     riot_id = request.args.get("riot_id")
-    from database.match_cache import get_match
+    from database.match_cache import get_match, get_timeline
     from services.match_logic import create_stats_dict, get_player_name, get_game_mode_label
     data = get_match(match_id)
     if not data:
@@ -39,6 +39,7 @@ def cached_match_detail(match_id: str):
     participants = info["participants"]
 
     focused = None
+    puuid = None
     if riot_id:
         from database.match_cache import get_summoner_profile
         profile = get_summoner_profile(riot_id)
@@ -70,6 +71,40 @@ def cached_match_detail(match_id: str):
             "puuid": p.get("puuid", ""),
         }
 
+    # ── Per-minute timeline metrics for focused player (from cache only) ──
+    timeline_metrics = None
+    if puuid:
+        tl = get_timeline(match_id)
+        if tl:
+            try:
+                meta_parts = tl.get("metadata", {}).get("participants", [])
+                if puuid in meta_parts:
+                    p_id = str(meta_parts.index(puuid) + 1)
+                    gold, damage, cs = [], [], []
+                    for frame in tl.get("info", {}).get("frames", []):
+                        pf = frame.get("participantFrames", {}).get(p_id)
+                        if not pf:
+                            continue
+                        gold.append(pf.get("totalGold", 0))
+                        dmg_stats = pf.get("damageStats", {})
+                        damage.append(dmg_stats.get("totalDamageDoneToChampions", 0))
+                        cs.append(pf.get("minionsKilled", 0) + pf.get("jungleMinionsKilled", 0))
+                    if gold:
+                        def _rate(cum):
+                            if len(cum) < 2:
+                                return cum
+                            return [cum[0]] + [max(0, cum[i] - cum[i - 1]) for i in range(1, len(cum))]
+                        timeline_metrics = {
+                            "gold_cumulative": gold,
+                            "gold_per_min": _rate(gold),
+                            "damage_cumulative": damage,
+                            "damage_per_min": _rate(damage),
+                            "cs_cumulative": cs,
+                            "cs_per_min": _rate(cs),
+                        }
+            except Exception:
+                pass
+
     return jsonify({
         "match_id": match_id,
         "game_mode": game_mode,
@@ -80,6 +115,7 @@ def cached_match_detail(match_id: str):
         "participants": [slim(p) for p in participants],
         "focused_stats": create_stats_dict(focused, game_duration) if focused else None,
         "focused_participant": slim(focused) if focused else None,
+        "timeline_metrics": timeline_metrics,
     })
 
 
@@ -88,11 +124,44 @@ def summoner_stats():
     riot_id = request.args.get("riot_id")
     if not riot_id:
         return jsonify({"error": "riot_id is required"}), 400
-    from database.match_cache import get_summoner_profile, get_summoner_match_stats
+    from database.match_cache import (
+        get_summoner_profile, get_summoner_match_stats,
+        get_analysis_cache, set_analysis_cache,
+    )
+
+    # Check Redis cache first
+    cached = get_analysis_cache(riot_id, "stats")
+    if cached:
+        return jsonify(cached)
+
     profile = get_summoner_profile(riot_id)
     if not profile:
         return jsonify({"riot_id": riot_id, "total": 0, "top_champions": [], "by_mode": {}})
-    return jsonify({"riot_id": riot_id, **get_summoner_match_stats(profile["puuid"])})
+
+    result = {"riot_id": riot_id, **get_summoner_match_stats(profile["puuid"])}
+    set_analysis_cache(riot_id, "stats", result)
+    return jsonify(result)
+
+
+@db_bp.get("/analysis-cache")
+def analysis_cache():
+    """Return cached analysis result without triggering computation.
+
+    Query params:
+        riot_id  – summoner riot id (required)
+        type     – 'duration' | 'heatmap' (required)
+    Returns: { cached: true, result: {...} }  or  { cached: false }
+    """
+    riot_id = request.args.get("riot_id")
+    atype = request.args.get("type")
+    if not riot_id or atype not in ("duration", "heatmap"):
+        return jsonify({"error": "riot_id and type (duration|heatmap) required"}), 400
+
+    from database.match_cache import get_analysis_cache
+    cached = get_analysis_cache(riot_id, atype)
+    if cached:
+        return jsonify({"cached": True, "result": cached})
+    return jsonify({"cached": False})
 
 
 @db_bp.get("/summoner-rank")
