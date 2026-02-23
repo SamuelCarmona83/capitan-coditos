@@ -50,6 +50,39 @@ function MatchCard(m) {
     </div>`;
 }
 
+function MatchHistoryRow(m) {
+    const modeLabel = QUEUE_LABEL[m.queue_id] || m.game_mode;
+    const win = m.win;
+    const border = win ? 'border-l-blue-500' : 'border-l-red-500';
+    const hoverBg = win ? 'hover:bg-blue-900/10' : 'hover:bg-red-900/10';
+    const kda = `${m.kills}/${m.deaths}/${m.assists}`;
+    const kdaVal = m.deaths > 0 ? ((m.kills + m.assists) / m.deaths).toFixed(1) : 'Perfect';
+    const kdaColor = !m.deaths ? 'text-yellow-400' : (m.kills + m.assists) / m.deaths >= 3 ? 'text-blue-400' : (m.kills + m.assists) / m.deaths >= 1.5 ? 'text-slate-200' : 'text-red-400';
+    const dur = m.game_duration ? fmtDuration(m.game_duration) : '';
+    const ago = m.game_creation ? timeAgo(m.game_creation) : '';
+
+    return `
+    <div class="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 cursor-pointer ${hoverBg} transition-colors border-l-2 ${border} border-b border-slate-700/20" data-match-id="${m.match_id}">
+      <div class="w-4 text-center shrink-0">
+        <span class="text-[10px] font-black ${win ? 'text-blue-400' : 'text-red-400'}">${win ? 'W' : 'L'}</span>
+      </div>
+      <img src="${DD}/img/champion/${champKey(m.champion)}.png" class="w-8 h-8 rounded shrink-0" onerror="this.style.display='none'">
+      <div class="w-16 sm:w-20 min-w-0 shrink-0">
+        <div class="text-xs sm:text-sm font-medium truncate">${m.champion}</div>
+      </div>
+      <div class="w-14 sm:w-20 text-center shrink-0">
+        <div class="text-xs sm:text-sm font-semibold ${kdaColor}">${kda}</div>
+        <div class="text-[10px] text-slate-500">${kdaVal} KDA</div>
+      </div>
+      <div class="hidden sm:block text-xs text-slate-500 w-24 shrink-0 truncate">${modeLabel}</div>
+      <div class="flex-1"></div>
+      <div class="text-right shrink-0">
+        <div class="text-[11px] text-slate-400">${dur}</div>
+        <div class="text-[10px] text-slate-600">${ago}</div>
+      </div>
+    </div>`;
+}
+
 function RankBadge(soloEntry) {
     if (!soloEntry) return '<span class="text-xs text-slate-500">Unranked</span>';
     const tier  = soloEntry.tier;
@@ -76,58 +109,94 @@ function RankBadge(soloEntry) {
 
 function ParticipantRow(p, isFocused, teamWin, maxDmg, maxGold, gameDur) {
     const dmgPct  = Math.round(p.totalDamageDealtToChampions / maxDmg * 100);
-    const goldPct = Math.round(p.goldEarned / maxGold * 100);
-    const rowBg = isFocused
-        ? (teamWin ? 'bg-blue-900/30 border border-blue-600/30' : 'bg-red-900/20 border border-red-700/20')
-        : 'border border-transparent';
     const cspm = gameDur > 0 ? (p.cs / (gameDur / 60)).toFixed(1) : '?';
+    const rowBg = isFocused
+        ? (teamWin ? 'bg-blue-900/20 border-l-2 border-l-blue-400' : 'bg-red-900/15 border-l-2 border-l-red-400')
+        : 'border-l-2 border-l-transparent';
     return `
-    <div class="flex items-center gap-2 rounded-lg px-2 py-1.5 mb-0.5 ${rowBg}">
-      <img src="${DD}/img/champion/${champKey(p.champion)}.png" class="w-8 h-8 rounded shrink-0" onerror="this.style.display='none'">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-1">
-          <span class="text-xs font-semibold truncate">${p.name}</span>
-          ${isFocused ? '<span class="text-xs text-violet-400">★</span>' : ''}
-        </div>
-        <div class="text-xs text-slate-300 font-medium">${p.kills}/${p.deaths}/${p.assists}</div>
-        <div class="flex gap-2 text-xs text-slate-500 mt-0.5">
-          <span title="CS">🗡 ${p.cs} <span class="text-slate-600">(${cspm}/m)</span></span>
-          <span title="Vision">👁 ${p.visionScore}</span>
-        </div>
-        <div class="mt-1 space-y-0.5">
-          <div class="flex items-center gap-1">
-            <span class="text-slate-600 w-6 text-right text-xs">DMG</span>
-            <div class="flex-1 h-1 bg-slate-700 rounded overflow-hidden">
-              <div class="h-full bg-violet-500" style="width:${dmgPct}%"></div>
-            </div>
-            <span class="text-xs text-slate-500 w-12 text-right">${(p.totalDamageDealtToChampions/1000).toFixed(1)}k</span>
-          </div>
-          <div class="flex items-center gap-1">
-            <span class="text-slate-600 w-6 text-right text-xs">GOLD</span>
-            <div class="flex-1 h-1 bg-slate-700 rounded overflow-hidden">
-              <div class="h-full bg-yellow-500" style="width:${goldPct}%"></div>
-            </div>
-            <span class="text-xs text-slate-500 w-12 text-right">${(p.goldEarned/1000).toFixed(1)}k</span>
-          </div>
+    <div class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 ${rowBg} hover:bg-slate-700/20 transition-colors">
+      <img src="${DD}/img/champion/${champKey(p.champion)}.png" class="w-7 h-7 sm:w-8 sm:h-8 rounded shrink-0" onerror="this.style.display='none'">
+      <div class="w-20 sm:w-28 min-w-0 shrink-0">
+        <div class="text-[11px] sm:text-xs font-semibold truncate flex items-center gap-1">
+          ${p.name}${isFocused ? ' <span class="text-violet-400 text-[10px]">★</span>' : ''}
         </div>
       </div>
+      <div class="w-14 sm:w-16 text-center shrink-0">
+        <div class="text-xs font-bold text-slate-200">${p.kills}/${p.deaths}/${p.assists}</div>
+      </div>
+      <div class="hidden sm:block w-14 text-center text-[11px] text-slate-500 shrink-0">
+        ${p.cs} <span class="text-slate-600">(${cspm})</span>
+      </div>
+      <div class="flex-1 flex items-center gap-1 min-w-0">
+        <div class="flex-1 h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
+          <div class="h-full bg-violet-500/70 rounded-full" style="width:${dmgPct}%"></div>
+        </div>
+        <span class="text-[10px] sm:text-xs text-slate-400 w-9 sm:w-11 text-right shrink-0">${(p.totalDamageDealtToChampions/1000).toFixed(1)}k</span>
+      </div>
+      <div class="hidden sm:block w-10 text-right text-xs text-yellow-500/60 shrink-0">${(p.goldEarned/1000).toFixed(1)}k</div>
+      <div class="hidden sm:block w-5 text-right text-[10px] text-slate-600 shrink-0">${p.visionScore}</div>
+    </div>`;
+}
+
+function ScoreboardHeader() {
+    return `
+    <div class="hidden sm:flex items-center gap-2 px-3 py-1 text-[10px] text-slate-600 uppercase tracking-wider border-b border-slate-700/30">
+      <div class="w-8"></div>
+      <div class="w-28">Player</div>
+      <div class="w-16 text-center">KDA</div>
+      <div class="w-14 text-center">CS</div>
+      <div class="flex-1">Damage</div>
+      <div class="w-10 text-right">Gold</div>
+      <div class="w-5 text-right">👁</div>
     </div>`;
 }
 
 function TeamTable(participants, label, teamWin, focused, maxDmg, maxGold, gameDur) {
     const isBlue = label === 'Blue';
     const winBadge = teamWin
-        ? `<span class="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-blue-600/30 text-blue-300 border border-blue-500/30">WIN</span>`
-        : `<span class="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-red-900/40 text-red-400 border border-red-700/30">LOSS</span>`;
+        ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600/20 text-blue-300 border border-blue-500/20">WIN</span>`
+        : `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-900/30 text-red-400 border border-red-700/20">LOSS</span>`;
     const headerColor = isBlue ? 'text-blue-400' : 'text-red-400';
+    const accentBorder = isBlue ? 'border-t-blue-500/40' : 'border-t-red-500/40';
     const rows = participants.map(p => {
         const isFocused = focused && p.puuid === focused.puuid;
         return ParticipantRow(p, isFocused, teamWin, maxDmg, maxGold, gameDur);
     }).join('');
-    return `<div class="bg-slate-800 rounded-lg p-3">
-    <div class="flex items-center text-xs font-semibold ${headerColor} mb-2">
-        <span>${label} Team</span>${winBadge}
-    </div>${rows}</div>`;
+    return `<div class="bg-slate-800/80 rounded-lg overflow-hidden border-t-2 ${accentBorder}">
+    <div class="flex items-center justify-between px-3 py-2 ${headerColor} text-xs font-semibold border-b border-slate-700/40">
+        <div class="flex items-center"><span>${label} Team</span>${winBadge}</div>
+    </div>
+    ${ScoreboardHeader()}${rows}</div>`;
+}
+
+function MatchDetailHeader(focused, gameDuration, gameModeLabel, gameCreation) {
+    if (!focused) return '';
+    const win = focused.win;
+    const champImg = `${DD}/img/champion/${champKey(focused.champion)}.png`;
+    const splash = `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${champKey(focused.champion)}_0.jpg`;
+    const kda = `${focused.kills}/${focused.deaths}/${focused.assists}`;
+    const kdaRatio = focused.deaths > 0 ? ((focused.kills + focused.assists) / focused.deaths).toFixed(2) : 'Perfect';
+    const accentColor = win ? 'rgba(37,99,235,0.25)' : 'rgba(239,68,68,0.2)';
+    const borderColor = win ? 'border-blue-500/30' : 'border-red-500/30';
+
+    return `
+    <div class="relative rounded-xl overflow-hidden mb-4 border ${borderColor}" style="min-height:140px">
+      <div class="absolute inset-0" style="background:url('${splash}');background-size:cover;background-position:center 20%;filter:brightness(0.25) saturate(1.3)"></div>
+      <div class="absolute inset-0" style="background:linear-gradient(135deg, ${accentColor}, transparent 60%)"></div>
+      <div class="absolute inset-0" style="background:linear-gradient(to top, rgba(15,23,42,0.85), transparent 50%)"></div>
+      <div class="relative z-10 flex items-center gap-4 p-4 sm:p-5 h-full">
+        <img src="${champImg}" class="w-14 h-14 sm:w-18 sm:h-18 rounded-xl border-2 ${win ? 'border-blue-500/60' : 'border-red-500/60'} shadow-lg shrink-0" onerror="this.style.display='none'">
+        <div class="min-w-0">
+          <div class="text-2xl sm:text-3xl font-black tracking-tight ${win ? 'text-blue-300' : 'text-red-300'}">${win ? 'VICTORY' : 'DEFEAT'}</div>
+          <div class="text-lg sm:text-xl font-bold text-white mt-0.5">${kda} <span class="text-sm font-normal text-slate-400">${kdaRatio} KDA</span></div>
+          <div class="flex flex-wrap gap-x-2 gap-y-0.5 text-xs sm:text-sm text-slate-400 mt-1">
+            <span>${gameModeLabel}</span><span class="text-slate-600">·</span>
+            <span>${fmtDuration(gameDuration)}</span><span class="text-slate-600">·</span>
+            <span>${fmtDate(gameCreation)}</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
 function MatchOutcomeBar(focusedWin, gameDuration, gameModeLabel, gameCreation) {

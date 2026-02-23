@@ -217,10 +217,8 @@ async function selectSummoner(riot_id, el) {
     activeMode       = 'all';
     activeRank       = null;
 
-    document.getElementById('match-list-header').textContent = riot_id.split('#')[0];
     document.getElementById('sync-btn').classList.remove('hidden');
-    mount('match-list', skeletonMatchList());
-    $('match-section').classList.remove('hidden');
+    mount('match-history', skeletonMatchList());
     $('splash').classList.add('hidden');
     $('detail-panel').classList.remove('hidden');
     $('profile-strip').classList.add('hidden');
@@ -274,8 +272,8 @@ async function selectSummoner(riot_id, el) {
     renderProfile(activeMode);
     setActiveTab(activeMode);
 
-    const mmb = document.getElementById('mobile-matches-btn');
-    if (mmb) mmb.textContent = `\u2630 Match History (${activeMatches.length})`;
+    const mc = document.getElementById('match-count');
+    if (mc) mc.textContent = `(${activeMatches.length})`;
     setMobilePanel('profile');
 }
 
@@ -284,7 +282,7 @@ async function selectSummoner(riot_id, el) {
 ═══════════════════════════════════════════════════════════════════ */
 
 function renderMatchList(matches) {
-    const container = document.getElementById('match-list');
+    const container = document.getElementById('match-history');
     if (!matches.length) {
         container.innerHTML = '<p class="p-4 text-slate-500 text-sm">No cached matches yet.</p>';
         return;
@@ -296,16 +294,19 @@ function renderMatchList(matches) {
         if (bucket !== lastBucket) {
             lastBucket = bucket;
             const sep = document.createElement('div');
-            sep.className = 'px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-800/60 sticky top-0 z-10';
+            sep.className = 'px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wider bg-slate-900/40 border-b border-slate-700/20';
             sep.textContent = bucket;
             container.appendChild(sep);
         }
         const tmpl = document.createElement('template');
-        tmpl.innerHTML = MatchCard(m).trim();
+        tmpl.innerHTML = MatchHistoryRow(m).trim();
         const card = tmpl.content.firstElementChild;
         card.onclick = () => selectMatch(m.match_id, card);
         container.appendChild(card);
     });
+    // Update match count
+    const mc = document.getElementById('match-count');
+    if (mc) mc.textContent = `(${matches.length})`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -441,8 +442,9 @@ async function selectMatch(match_id, el) {
 
     $('profile-view').classList.add('hidden');
     $('match-view').classList.remove('hidden');
-    mount('match-content', '<p class="text-slate-400 text-sm">Loading\u2026</p>');
+    mount('match-content', '<div class="flex items-center justify-center py-12 text-slate-400 text-sm"><span class="inline-block w-4 h-4 border-2 border-slate-500 border-t-slate-200 rounded-full animate-spin mr-2"></span>Loading match\u2026</div>');
 
+    // Build profile strip
     const s    = activeStats;
     const top3 = (s?.top_champions || []).slice(0, 3);
     document.getElementById('strip-champs').innerHTML = top3.map(c =>
@@ -452,8 +454,11 @@ async function selectMatch(match_id, el) {
     document.getElementById('strip-stats').textContent = s ? `${s.total}G · ${s.winrate}%WR · ${s.avg_kda} KDA` : '';
     $('profile-strip').classList.remove('hidden');
 
+    // Scroll detail panel to top
+    $('detail-panel').scrollTop = 0;
+
     const data = await fetch(`/api/db/match/${match_id}?riot_id=${encodeURIComponent(activeSummonerId)}`).then(r => r.json());
-    if (data.error) { mount('match-content', `<p class="text-red-400">${data.error}</p>`); return; }
+    if (data.error) { mount('match-content', `<p class="text-red-400 py-8">${data.error}</p>`); return; }
 
     const blue    = data.participants.filter(p => p.teamId === 100);
     const red     = data.participants.filter(p => p.teamId === 200);
@@ -461,15 +466,15 @@ async function selectMatch(match_id, el) {
     const maxGold = Math.max(...data.participants.map(p => p.goldEarned), 1);
 
     mount('match-content', `
-    ${MatchOutcomeBar(data.focused_participant?.win, data.game_duration, data.game_mode_label, data.game_creation)}
+    ${MatchDetailHeader(data.focused_participant, data.game_duration, data.game_mode_label, data.game_creation)}
     <div class="flex justify-end mb-3">
       <button id="ai-btn" onclick="analyzeWithAI('${match_id}')"
-        class="px-3 py-1.5 bg-violet-700 hover:bg-violet-600 rounded text-sm font-medium transition-colors">
+        class="px-3 py-1.5 bg-violet-700 hover:bg-violet-600 rounded text-sm font-medium transition-colors flex items-center gap-1.5">
         🤖 Analyze with AI
       </button>
     </div>
-    <div id="ai-result" class="hidden mb-4 bg-slate-800 rounded p-3 text-sm text-slate-200 whitespace-pre-wrap leading-relaxed"></div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div id="ai-result" class="hidden mb-4 bg-slate-800/80 rounded-lg p-4 text-sm text-slate-200 whitespace-pre-wrap leading-relaxed border border-slate-700/50"></div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
       ${TeamTable(blue, 'Blue', data.blue_win,  data.focused_participant, maxDmg, maxGold, data.game_duration)}
       ${TeamTable(red,  'Red',  !data.blue_win, data.focused_participant, maxDmg, maxGold, data.game_duration)}
     </div>`);
@@ -492,7 +497,6 @@ function closeProfile() {
     $('match-view').classList.add('hidden');
     $('profile-strip').classList.add('hidden');
     $('detail-panel').classList.add('hidden');
-    $('match-section').classList.add('hidden');
     $('splash').classList.remove('hidden');
 
     document.querySelectorAll('#summoner-list li').forEach(l => l.classList.remove('bg-slate-700'));
