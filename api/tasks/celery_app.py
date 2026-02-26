@@ -19,6 +19,8 @@ celery_app = Celery(
         "tasks.sync_all_matches",
         "tasks.backfill_summoner_ids",
         "tasks.heatmap",
+        "tasks.precache_analysis",
+        "tasks.backfill_timelines",
     ],
 )
 
@@ -41,6 +43,14 @@ celery_app.conf.update(
             "task": "tasks.sync_all_matches.sync_all_matches",
             "schedule": crontab(hour=3, minute=0),
         },
+        "precache-analysis": {
+            "task": "tasks.precache_analysis.precache_analysis",
+            "schedule": crontab(hour=3, minute=30),
+        },
+        "backfill-timelines": {
+            "task": "tasks.backfill_timelines.backfill_timelines",
+            "schedule": crontab(hour=4, minute=0),
+        },
     },
 )
 
@@ -52,7 +62,16 @@ def create_celery(flask_app=None):
 
 @worker_ready.connect
 def on_worker_ready(sender, **kwargs):
-    """Kick off a full match sync and summoner-id backfill shortly after the worker starts."""
+    """Kick off startup tasks. Riot-API-heavy tasks are chained to avoid rate limits."""
+    from celery import chain
+
     celery_app.send_task("tasks.backfill_summoner_ids.backfill_summoner_ids", countdown=10)
-    celery_app.send_task("tasks.sync_all_matches.sync_all_matches", countdown=15)
-    print("[startup] Queued backfill_summoner_ids (10s) and sync_all_matches (15s)")
+    celery_app.send_task("tasks.precache_analysis.precache_analysis", countdown=20)
+
+    # Chain: sync_all_matches → backfill_timelines (sequential to avoid rate limit conflicts)
+    chain(
+        celery_app.signature("tasks.sync_all_matches.sync_all_matches", countdown=15),
+        celery_app.signature("tasks.backfill_timelines.backfill_timelines"),
+    ).apply_async()
+
+    print("[startup] Queued backfill_ids (10s), precache (20s), sync→backfill_timelines chain (15s)")

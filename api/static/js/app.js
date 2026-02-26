@@ -32,6 +32,77 @@ let syncPollTimer = null;
 /* ── Modal autocomplete debounce ─────────────────────────────────── */
 let acTimer = null;
 
+/* ── Hash-based routing state ─────────────────────────────────────── */
+let _suppressHashChange = false;
+
+function _setHash(summoner, match) {
+    _suppressHashChange = true;
+    let h = '';
+    if (summoner) {
+        h = 'summoner=' + encodeURIComponent(summoner);
+        if (match) h += '&match=' + encodeURIComponent(match);
+    }
+    window.location.hash = h;
+    setTimeout(() => { _suppressHashChange = false; }, 0);
+}
+
+function _parseHash() {
+    const h = window.location.hash.slice(1);
+    const params = new URLSearchParams(h);
+    return {
+        summoner: params.get('summoner'),
+        match:    params.get('match'),
+    };
+}
+
+async function _navigateFromHash() {
+    const { summoner, match } = _parseHash();
+    console.log('[route] navigateFromHash:', { summoner, match, activeSummonerId });
+    if (!summoner) {
+        if (activeSummonerId) closeProfile();
+        return;
+    }
+    try {
+        // If summoner changed, select it
+        if (summoner !== activeSummonerId) {
+            // Wait for summoner list if not ready
+            if (!allSummoners.length) await refreshSummonerList();
+            // Find the li by data-riot-id
+            let li = null;
+            document.querySelectorAll('#summoner-list li').forEach(el => {
+                if (el.dataset.riotId === summoner) li = el;
+            });
+            console.log('[route] selectSummoner from hash, li found:', !!li);
+            await selectSummoner(summoner, li, true);
+        }
+        if (match && activeSummonerId) {
+            // Find the match card by data-match-id
+            let card = null;
+            document.querySelectorAll('#match-history [data-match-id]').forEach(el => {
+                if (el.dataset.matchId === match) card = el;
+            });
+            console.log('[route] selectMatch from hash, card found:', !!card);
+            await selectMatch(match, card, true);
+        } else if (!match && activeSummonerId && $('match-view') && !$('match-view').classList.contains('hidden')) {
+            closeMatch();
+        }
+    } catch (e) {
+        console.error('[route] Error navigating from hash:', e);
+    }
+}
+
+function _copyShareLink(evt) {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+        const btn = evt && evt.currentTarget ? evt.currentTarget : document.querySelector('.share-btn');
+        if (btn) {
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<span class="text-emerald-400">✓ Copied!</span>';
+            setTimeout(() => { btn.innerHTML = orig; }, 1500);
+        }
+    });
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════════════════ */
@@ -58,6 +129,16 @@ async function init() {
 
     startSyncPolling();
     setMobilePanel('list');
+
+    // Hash-based routing: restore state from URL on load
+    window.addEventListener('hashchange', () => {
+        if (!_suppressHashChange) _navigateFromHash();
+    });
+    const initialHash = _parseHash();
+    console.log('[route] Initial hash:', initialHash, 'raw:', window.location.hash);
+    if (initialHash.summoner) {
+        await _navigateFromHash();
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -116,6 +197,7 @@ function renderSummonerList(list) {
         const li = document.createElement('li');
         li.className = 'flex items-center gap-2 px-2 py-2 hover:bg-slate-700/60 text-sm border-b border-slate-700/30 transition-colors group';
         li.dataset.id = riot_id;
+        li.dataset.riotId = riot_id;
 
         const [name, tag]    = riot_id.split('#');
         const fallbackIcon   = DD + '/img/profileicon/29.png';
@@ -220,9 +302,9 @@ async function refreshSummonerList() {
    SELECT SUMMONER
 ═══════════════════════════════════════════════════════════════════ */
 
-async function selectSummoner(riot_id, el) {
+async function selectSummoner(riot_id, el, _fromHash = false) {
     document.querySelectorAll('#summoner-list li').forEach(l => l.classList.remove('bg-slate-700'));
-    el.classList.add('bg-slate-700');
+    if (el) el.classList.add('bg-slate-700');
     activeSummonerId = riot_id;
     activeMatchEl    = null;
     activeMode       = 'all';
@@ -301,6 +383,9 @@ async function selectSummoner(riot_id, el) {
     const mc = document.getElementById('match-count');
     if (mc) mc.textContent = `(${activeMatches.length})`;
     setMobilePanel('profile');
+
+    // Update URL hash
+    if (!_fromHash) _setHash(riot_id, null);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -462,9 +547,9 @@ function renderChampChart(champs) {
    MATCH DETAIL
 ═══════════════════════════════════════════════════════════════════ */
 
-async function selectMatch(match_id, el) {
+async function selectMatch(match_id, el, _fromHash = false) {
     if (activeMatchEl) activeMatchEl.classList.remove('bg-slate-700');
-    el.classList.add('bg-slate-700');
+    if (el) el.classList.add('bg-slate-700');
     activeMatchEl = el;
 
     // Destroy previous match charts
@@ -518,6 +603,9 @@ async function selectMatch(match_id, el) {
     }
 
     setMobilePanel('match-detail');
+
+    // Update URL hash
+    if (!_fromHash) _setHash(activeSummonerId, match_id);
 }
 
 function _destroyMatchCharts() {
@@ -581,6 +669,7 @@ function closeMatch() {
     $('profile-strip').classList.add('hidden');
     $('profile-view').classList.remove('hidden');
     setMobilePanel('profile');
+    _setHash(activeSummonerId, null);
 }
 
 function closeProfile() {
@@ -609,6 +698,7 @@ function closeProfile() {
     document.getElementById('duration-content').innerHTML =
         '<div class="absolute inset-0 flex items-center justify-center text-slate-600 text-xs">Loading\u2026</div>';
     setMobilePanel('list');
+    _setHash(null, null);
 }
 
 async function analyzeWithAI(match_id) {
@@ -907,7 +997,6 @@ async function runHeatmapAnalysis(force = false) {
 
     // 1. JS in-memory cache
     if (!force && heatmapCache[activeSummonerId]) {
-        console.log('[HEATMAP] JS cache hit for', activeSummonerId);
         renderHeatmapResult(heatmapCache[activeSummonerId]);
         return;
     }
@@ -922,7 +1011,6 @@ async function runHeatmapAnalysis(force = false) {
     if (!force) {
         try {
             const sc = await fetch(`/api/db/analysis-cache?riot_id=${encodeURIComponent(activeSummonerId)}&type=heatmap`).then(r => r.json());
-            console.log('[HEATMAP] server cache response:', sc.cached, 'result keys:', sc.result ? Object.keys(sc.result) : 'N/A');
             if (sc.cached) {
                 btn.disabled = false; btn.style.animation = '';
                 heatmapCache[activeSummonerId] = sc.result;
@@ -1060,7 +1148,6 @@ function renderHeatmapResult(result) {
     mapImg.src = `${DD}/img/map/map11.png`;
 
     // Render per-minute metrics if available
-    console.log('[HEATMAP] result.metrics exists?', !!result.metrics, 'keys:', result.metrics ? Object.keys(result.metrics) : 'N/A');
     if (result.metrics) {
         renderTimelineMetrics(result.metrics, result.matches_analyzed);
     }
@@ -1072,17 +1159,14 @@ function renderHeatmapResult(result) {
 
 function renderTimelineMetrics(metrics, matchCount) {
     const container = $('timeline-content');
-    console.log('[TIMELINE] called. container:', !!container, 'metrics:', !!metrics);
     if (!container) return;
 
     // Guard: skip if no actual data
     if (!metrics || !metrics.gold_per_min || !metrics.gold_per_min.length) {
-        console.log('[TIMELINE] empty data guard triggered. gold_per_min:', metrics?.gold_per_min);
         container.classList.add('hidden');
         return;
     }
 
-    console.log('[TIMELINE] gold_per_min length:', metrics.gold_per_min.length, 'removing hidden');
     container.classList.remove('hidden');
 
     const metaEl = document.getElementById('timeline-meta');
@@ -1161,8 +1245,6 @@ function renderTimelineMetrics(metrics, matchCount) {
     chartGoldPM   = _makeLineChart('chart-gold-pm',   metrics.gold_per_min,   '#fbbf24', 'Gold/min');
     chartDamagePM = _makeLineChart('chart-damage-pm', metrics.damage_per_min, '#f87171', 'Damage/min');
     chartCSPM     = _makeLineChart('chart-cs-pm',     metrics.cs_per_min,     '#34d399', 'CS/min');
-    console.log('[TIMELINE] charts created:', !!chartGoldPM, !!chartDamagePM, !!chartCSPM);
-    console.log('[TIMELINE] container hidden?', container.classList.contains('hidden'), 'display:', getComputedStyle(container).display);
 }
 
 /* ═══════════════════════════════════════════════════════════════════

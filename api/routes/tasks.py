@@ -84,6 +84,22 @@ def start_heatmap():
     return jsonify({"task_id": task.id}), 202
 
 
+@tasks_bp.post("/precache-analysis")
+def start_precache_analysis():
+    """Manually trigger pre-caching of duration + heatmap for all summoners."""
+    from tasks.precache_analysis import precache_analysis
+    task = precache_analysis.apply_async()
+    return jsonify({"task_id": task.id}), 202
+
+
+@tasks_bp.post("/backfill-timelines")
+def start_backfill_timelines():
+    """Manually trigger backfill of timeline data for matches missing it."""
+    from tasks.backfill_timelines import backfill_timelines
+    task = backfill_timelines.apply_async()
+    return jsonify({"task_id": task.id}), 202
+
+
 @tasks_bp.get("/<task_id>")
 def get_task_status(task_id: str):
     result: AsyncResult = celery_app.AsyncResult(task_id)

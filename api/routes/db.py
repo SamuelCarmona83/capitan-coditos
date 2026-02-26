@@ -71,10 +71,21 @@ def cached_match_detail(match_id: str):
             "puuid": p.get("puuid", ""),
         }
 
-    # ── Per-minute timeline metrics for focused player (from cache only) ──
+    # ── Per-minute timeline metrics for focused player ──
     timeline_metrics = None
     if puuid:
         tl = get_timeline(match_id)
+        # If timeline not cached, fetch from Riot API on demand and store it
+        if not tl:
+            try:
+                from services.riot_api import _fetch_timeline_safe_sync
+                from database.match_cache import store_timeline
+                region = request.args.get("region", "LAN")
+                tl = _fetch_timeline_safe_sync(match_id, region)
+                if tl:
+                    store_timeline(match_id, tl)
+            except Exception:
+                pass
         if tl:
             try:
                 meta_parts = tl.get("metadata", {}).get("participants", [])

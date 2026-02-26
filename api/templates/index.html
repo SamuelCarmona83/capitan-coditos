@@ -170,6 +170,9 @@
                 <button onclick="closeMatch()"
                     class="ml-auto text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-700 transition-colors flex items-center gap-1">
                     <span>←</span> Back to profile</button>
+                <button onclick="_copyShareLink(event)" title="Copy share link"
+                    class="share-btn text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-700 transition-colors">
+                    🔗 Share</button>
             </div>
 
             <!-- Full profile view -->
@@ -186,11 +189,17 @@
                         </div>
                         <div id="profile-rank-badge" class="shrink-0"></div>
                     </div>
-                    <!-- Close profile button -->
-                    <button onclick="closeProfile()" title="Close profile"
-                        class="absolute top-2 right-2 z-20 w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/60 hover:bg-slate-900/90 text-slate-400 hover:text-white transition-colors text-sm">
-                        ✕
-                    </button>
+                    <!-- Share + Close profile buttons -->
+                    <div class="absolute top-2 right-2 z-20 flex gap-1">
+                        <button onclick="_copyShareLink(event)" title="Copy share link"
+                            class="share-btn w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/60 hover:bg-slate-900/90 text-slate-400 hover:text-white transition-colors text-sm">
+                            🔗
+                        </button>
+                        <button onclick="closeProfile()" title="Close profile"
+                            class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/60 hover:bg-slate-900/90 text-slate-400 hover:text-white transition-colors text-sm">
+                            ✕
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Mode tabs + Sync button -->
