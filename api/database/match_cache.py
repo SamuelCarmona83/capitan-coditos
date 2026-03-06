@@ -202,9 +202,10 @@ def clear_analysis_cache(riot_id: str, analysis_type: str = None, puuid: str = N
 # Companion win-rate cache
 # ---------------------------------------------------------------------------
 
-def get_companion_winrates(puuid: str) -> list:
+def get_companion_winrates(puuid: str) -> dict:
     """Return win-rate stats for every known summoner who played on the same
-    team as *puuid*.  Results are cached in Redis for 30 min."""
+    team as *puuid*, keyed by mode bucket (all/ranked/normal/aram/other).
+    Results are cached in Redis for 30 min."""
     cache_key = f"companions:{puuid}"
     try:
         raw = _redis().get(cache_key)
@@ -215,7 +216,7 @@ def get_companion_winrates(puuid: str) -> list:
 
     db = get_db()
 
-    # Build {puuid -> (riot_id, profileIconId)} map for all registered summoners
+    # Build {puuid -> {riot_id, profileIconId}} map for all registered summoners
     profile_docs = db["summoner_profiles"].find({}, {"_id": 1, "puuid": 1, "profile.profileIconId": 1})
     known = {
         doc["puuid"]: {"riot_id": doc["_id"], "profileIconId": doc.get("profile", {}).get("profileIconId")}
@@ -223,21 +224,26 @@ def get_companion_winrates(puuid: str) -> list:
         if doc.get("puuid") and doc["puuid"] != puuid
     }
 
+    _empty: dict = {"all": [], "ranked": [], "normal": [], "aram": [], "other": []}
     if not known:
-        return []
+        return _empty
 
-    # Aggregate per companion across all matches where subject participated
-    companions: dict = {}
+    # Aggregate per companion per mode bucket
+    _buckets = ("all", "ranked", "normal", "aram", "other")
+    data: dict = {b: {} for b in _buckets}  # bucket -> {riot_id -> {games, wins, profileIconId}}
+
     for doc in db["matches"].find(
         {"data.metadata.participants": puuid},
-        {"data.info.participants": 1},
+        {"data.info.participants": 1, "data.info.queueId": 1},
     ):
-        participants = doc["data"]["info"]["participants"]
+        info         = doc["data"]["info"]
+        participants = info["participants"]
         subject = next((p for p in participants if p.get("puuid") == puuid), None)
         if not subject:
             continue
-        team_id  = subject.get("teamId")
-        did_win  = subject.get("win", False)
+        team_id = subject.get("teamId")
+        did_win = subject.get("win", False)
+        mode    = _QUEUE_MODE.get(info.get("queueId", 0), "other")
         for p in participants:
             p_puuid = p.get("puuid", "")
             if p_puuid == puuid or p.get("teamId") != team_id:
@@ -245,24 +251,29 @@ def get_companion_winrates(puuid: str) -> list:
             if p_puuid not in known:
                 continue
             riot_id = known[p_puuid]["riot_id"]
-            c = companions.setdefault(riot_id, {"games": 0, "wins": 0, "profileIconId": known[p_puuid]["profileIconId"]})
-            c["games"] += 1
-            if did_win:
-                c["wins"] += 1
+            icon_id = known[p_puuid]["profileIconId"]
+            for b in ("all", mode):
+                c = data[b].setdefault(riot_id, {"games": 0, "wins": 0, "profileIconId": icon_id})
+                c["games"] += 1
+                if did_win:
+                    c["wins"] += 1
 
-    result = [
-        {
-            "riot_id":      riot_id,
-            "games":        v["games"],
-            "wins":         v["wins"],
-            "losses":       v["games"] - v["wins"],
-            "win_rate":     round(v["wins"] / v["games"] * 100, 1) if v["games"] else 0,
-            "profileIconId": v.get("profileIconId"),
-        }
-        for riot_id, v in companions.items()
-    ]
-    result.sort(key=lambda x: x["games"], reverse=True)
+    def _build_list(bucket_dict: dict) -> list:
+        rows = [
+            {
+                "riot_id":       rid,
+                "games":         v["games"],
+                "wins":          v["wins"],
+                "losses":        v["games"] - v["wins"],
+                "win_rate":      round(v["wins"] / v["games"] * 100, 1) if v["games"] else 0,
+                "profileIconId": v.get("profileIconId"),
+            }
+            for rid, v in bucket_dict.items()
+        ]
+        rows.sort(key=lambda x: x["games"], reverse=True)
+        return rows
 
+    result = {b: _build_list(data[b]) for b in _buckets}
     try:
         _redis().setex(cache_key, 1800, json.dumps(result))
     except Exception:
@@ -327,12 +338,14 @@ _QUEUE_MODE = {
     490: "normal",   # Quickplay
     700: "ranked",   # Clash
     720: "aram",     # ARAM Clash
+    890: "other",    # Bot
     900: "other",    # ARURF
     1020: "other",   # One for All
     1300: "other",   # Nexus Blitz
     1400: "other",   # Ultimate Spellbook
     1700: "other",   # Arena
     1710: "other",   # Arena (16j)
+    1820: "other",   # Swarm
     1900: "other",   # Pick URF
     2300: "other",   # Brawl
     2400: "aram",    # ARAM: Mayhem

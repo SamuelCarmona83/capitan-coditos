@@ -202,18 +202,29 @@
                     </div>
                 </div>
 
+                <!-- Period filter bar -->
+                <div class="mb-3">
+                    <div class="flex flex-wrap gap-1 items-center">
+                        <button onclick="setPeriod('all')" data-period="all" class="period-btn px-2.5 py-1 rounded text-xs transition-colors bg-violet-700 text-white font-semibold">All time</button>
+                        <button onclick="setPeriod('S2026')" data-period="S2026" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">S2026</button>
+                        <button onclick="setPeriod('S2025')" data-period="S2025" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">S2025</button>
+                        <button onclick="setPeriod('S2024')" data-period="S2024" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">S2024</button>
+                        <button onclick="setPeriod('last90')" data-period="last90" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">90d</button>
+                        <button onclick="setPeriod('last30')" data-period="last30" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">30d</button>
+                        <button onclick="toggleCustomDate()" data-period="custom" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">Custom ▾</button>
+                        <span id="period-match-count" class="text-[10px] text-slate-500 ml-1"></span>
+                    </div>
+                    <div id="custom-date-range" class="hidden mt-2 flex items-center gap-2 flex-wrap">
+                        <input type="date" id="custom-from" class="bg-slate-700 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-violet-500">
+                        <span class="text-slate-500 text-xs">→</span>
+                        <input type="date" id="custom-to" class="bg-slate-700 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-violet-500">
+                        <button onclick="applyCustomDate()" class="px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded text-xs text-white transition-colors">Aplicar</button>
+                    </div>
+                </div>
+
                 <!-- Mode tabs + Sync button -->
                 <div class="flex items-center justify-between mb-4">
-                    <div class="flex gap-1" id="mode-tabs">
-                        <button onclick="switchMode('all')" data-mode="all"
-                            class="tab-btn px-3 py-1 rounded text-sm">All</button>
-                        <button onclick="switchMode('ranked')" data-mode="ranked"
-                            class="tab-btn px-3 py-1 rounded text-sm">Ranked</button>
-                        <button onclick="switchMode('normal')" data-mode="normal"
-                            class="tab-btn px-3 py-1 rounded text-sm">Normal</button>
-                        <button onclick="switchMode('aram')" data-mode="aram"
-                            class="tab-btn px-3 py-1 rounded text-sm">ARAM</button>
-                    </div>
+                    <div class="flex flex-wrap gap-1" id="mode-tabs"></div>
                     <button id="sync-btn" onclick="syncSummoner()" title="Sync latest matches"
                         class="hidden text-slate-400 hover:text-white transition-colors p-1.5 rounded hover:bg-slate-700 flex items-center gap-1.5 text-xs">
                         <svg id="sync-icon" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
@@ -314,10 +325,10 @@
         </div>
     </div>
 
-    <script src="/static/js/constants.js?v=4"></script>
-    <script src="/static/js/components.js?v=4"></script>
-    <script src="/static/js/mobile.js?v=4"></script>
-    <script src="/static/js/app.js?v=4"></script>
+    <script src="/static/js/constants.js?v=8"></script>
+    <script src="/static/js/components.js?v=8"></script>
+    <script src="/static/js/mobile.js?v=8"></script>
+    <script src="/static/js/app.js?v=8"></script>
 </body>
 
 </html>

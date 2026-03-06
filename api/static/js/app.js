@@ -309,10 +309,20 @@ async function selectSummoner(riot_id, el, _fromHash = false) {
     activeSummonerId = riot_id;
     activeMatchEl    = null;
     activeMode       = 'all';
+    activePeriod     = 'all';
+    customDateFrom   = null;
+    customDateTo     = null;
     activeRank       = null;
-    activeCompanions = [];
+    activeCompanions = { all: [], ranked: [], normal: [], aram: [], other: [] };
     const _cs = $('companions-section');
     if (_cs) { _cs.innerHTML = ''; _cs.classList.add('hidden'); }
+    document.querySelectorAll('.period-btn').forEach(b => {
+        const isAll = b.dataset.period === 'all';
+        b.className = 'period-btn px-2.5 py-1 rounded text-xs transition-colors ' +
+            (isAll ? 'bg-violet-700 text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-700');
+    });
+    const _cdr = $('custom-date-range');
+    if (_cdr) _cdr.classList.add('hidden');
 
     document.getElementById('sync-btn').classList.remove('hidden');
     mount('match-history', skeletonMatchList());
@@ -367,7 +377,7 @@ async function selectSummoner(riot_id, el, _fromHash = false) {
 
     const region = summoner?.region ?? 'LAN';
     const [matchRes, statsRes, rankRes, companionsRes] = await Promise.all([
-        fetch(`/api/db/matches?riot_id=${encodeURIComponent(riot_id)}&count=50`).then(r => r.json()),
+        fetch(`/api/db/matches?riot_id=${encodeURIComponent(riot_id)}&count=500`).then(r => r.json()),
         fetch(`/api/db/summoner-stats?riot_id=${encodeURIComponent(riot_id)}`).then(r => r.json()),
         fetch(`/api/db/summoner-rank?riot_id=${encodeURIComponent(riot_id)}&region=${region}`)
             .then(r => r.json()).catch(() => ({ entries: [] })),
@@ -378,14 +388,14 @@ async function selectSummoner(riot_id, el, _fromHash = false) {
     activeMatches    = matchRes.matches  || [];
     activeStats      = statsRes;
     activeRank       = rankRes.entries   || [];
-    activeCompanions = companionsRes.companions || [];
+    activeCompanions = companionsRes.companions || { all: [], ranked: [], normal: [], aram: [], other: [] };
 
     document.getElementById('footer-status').textContent =
         `${riot_id} · ${activeMatches.length} matches cached · ${activeStats.total ?? 0} in stats`;
 
-    renderMatchList(activeMatches);
+    renderModeTabs();
     renderProfile(activeMode);
-    setActiveTab(activeMode);
+    renderMatchList(getFilteredMatches(activeMode, activePeriod));
 
     const mc = document.getElementById('match-count');
     if (mc) mc.textContent = `(${activeMatches.length})`;
@@ -431,36 +441,71 @@ function renderMatchList(matches) {
    PROFILE
 ═══════════════════════════════════════════════════════════════════ */
 
-function renderProfile(mode) {
-    if (!activeStats) return;
-    const s = mode === 'all'
-        ? activeStats
-        : (activeStats.by_mode?.[mode] ?? { total: 0, wins: 0, winrate: 0, avg_kda: 0 });
+function computeStatsFromMatches(matches) {
+    const total = matches.length;
+    if (total === 0) return { total: 0, wins: 0, losses: 0, winrate: 0, avg_kda: 0, avg_duration: 0, top_champions: [] };
+    let wins = 0, kills = 0, deaths = 0, assists = 0, durTotal = 0, counted = 0;
+    const champMap = {};
+    for (const m of matches) {
+        // match list items have stats directly; match detail items have them under focused_participant
+        const src = (m.kills != null) ? m : m.focused_participant;
+        if (!src) continue;
+        counted++;
+        const w = src.win ? 1 : 0;
+        wins    += w;
+        kills   += src.kills   ?? 0;
+        deaths  += src.deaths  ?? 0;
+        assists += src.assists ?? 0;
+        durTotal += m.game_duration ?? 0;
+        const ch = src.champion;
+        if (ch) {
+            if (!champMap[ch]) champMap[ch] = { champion: ch, games: 0, wins: 0, kills: 0, deaths: 0, assists: 0 };
+            champMap[ch].games++;
+            champMap[ch].wins    += w;
+            champMap[ch].kills   += src.kills   ?? 0;
+            champMap[ch].deaths  += src.deaths  ?? 0;
+            champMap[ch].assists += src.assists ?? 0;
+        }
+    }
+    const losses    = counted - wins;
+    const winrate   = counted > 0 ? Math.round(wins / counted * 100) : 0;
+    const avg_kda   = deaths > 0
+        ? Math.round((kills + assists) / deaths * 100) / 100
+        : (kills + assists);
+    const avg_duration = counted > 0 ? Math.round(durTotal / counted) : 0;
+    const top_champions = Object.values(champMap)
+        .sort((a, b) => b.games - a.games)
+        .slice(0, 6)
+        .map(c => ({
+            champion: c.champion,
+            games:    c.games,
+            wins:     c.wins,
+            winrate:  Math.round(c.wins / c.games * 100),
+            avg_kda:  c.deaths > 0
+                ? Math.round((c.kills + c.assists) / c.deaths * 100) / 100
+                : (c.kills + c.assists),
+        }));
+    return { total: counted, wins, losses, winrate, avg_kda, avg_duration, top_champions };
+}
 
-    const total   = s.total   ?? 0;
-    const wins    = s.wins    ?? 0;
-    const losses  = s.losses  ?? (total - wins);
-    const winrate = s.winrate ?? 0;
-    const kda     = s.avg_kda ?? 0;
-    const durSecs = s.avg_duration
-        || (mode === 'all' ? activeStats.avg_duration : null)
-        || activeStats.avg_duration;
-    const avgDur  = durSecs ? fmtDuration(durSecs) : '—';
-    const champs  = (mode === 'all'
-        ? activeStats.top_champions
-        : (s.top_champions?.length ? s.top_champions : activeStats.top_champions)) || [];
+function renderProfile(mode) {
+    if (!activeMatches) return;
+    const filtered = getFilteredMatches(mode, activePeriod);
+    const { total, wins, losses, winrate, avg_kda: kda, avg_duration: durSecs, top_champions: champs } =
+        computeStatsFromMatches(filtered);
+    const avgDur = durSecs ? fmtDuration(durSecs) : '—';
 
     mount('stats-row', StatsRow({ total, wins, losses, winrate, kda }));
     renderWinrateChart(wins, losses, avgDur);
     renderChampGrid(champs);
     renderCompanions();
-    renderProfileHeader();
+    renderProfileHeader(champs[0]?.champion);
     runDurationAnalysis();
     runHeatmapAnalysis();
 }
 
-function renderProfileHeader() {
-    const topChamp = activeStats?.top_champions?.[0]?.champion;
+function renderProfileHeader(topChamp) {
+    topChamp = topChamp ?? activeStats?.top_champions?.[0]?.champion;
     if (topChamp) {
         const splash = `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${champKey(topChamp)}_0.jpg`;
         const bg  = document.getElementById('profile-splash-bg');
@@ -485,15 +530,17 @@ function renderChampGrid(champs) {
 function renderCompanions() {
     const sec = $('companions-section');
     if (!sec) return;
-    if (!activeCompanions || activeCompanions.length === 0) {
+    const list = (activeCompanions[activeMode] || activeCompanions.all || []);
+    if (!list || list.length === 0) {
         sec.classList.add('hidden');
         sec.innerHTML = '';
         return;
     }
-    const rows = activeCompanions.slice(0, 8).map(CompanionRow).join('');
+    const modeLabel = MODE_LABELS[activeMode] || activeMode;
+    const rows = list.slice(0, 8).map(CompanionRow).join('');
     sec.innerHTML = `
     <div class="bg-slate-800 rounded-lg p-3">
-      <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">🤝 Win Rate con Amigos</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">🤝 Win Rate con Amigos · ${modeLabel}</div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-0.5">${rows}</div>
     </div>`;
     sec.classList.remove('hidden');
@@ -508,20 +555,94 @@ function renderCompanions() {
 
 function switchMode(mode) {
     activeMode = mode;
-    setActiveTab(mode);
+    renderModeTabs();
     renderProfile(mode);
-    const filtered = mode === 'all'
-        ? activeMatches
-        : activeMatches.filter(m => (QUEUE_MODE[m.queue_id] ?? 'other') === mode);
-    renderMatchList(filtered);
+    renderMatchList(getFilteredMatches(mode, activePeriod));
+}
+
+function getPeriodRange(period) {
+    if (!period || period === 'all') return null;
+    if (period === 'last30') return { from: Date.now() - 30 * 86400000, to: null };
+    if (period === 'last90') return { from: Date.now() - 90 * 86400000, to: null };
+    if (period === 'custom') return { from: customDateFrom, to: customDateTo };
+    const s = SEASONS.find(x => x.id === period);
+    return s ? { from: s.from, to: s.to } : null;
+}
+
+function getFilteredMatches(mode, period) {
+    let list = activeMatches;
+    const range = getPeriodRange(period ?? activePeriod);
+    if (range) {
+        list = list.filter(m => {
+            const t = m.game_creation;
+            if (range.from && t < range.from) return false;
+            if (range.to   && t > range.to)   return false;
+            return true;
+        });
+    }
+    const m = mode ?? activeMode;
+    if (m !== 'all') list = list.filter(x => (QUEUE_MODE[x.queue_id] ?? 'other') === m);
+    return list;
+}
+
+function renderModeTabs() {
+    const inPeriod = getFilteredMatches('all', activePeriod);
+    const buckets  = new Set(inPeriod.map(m => QUEUE_MODE[m.queue_id] ?? 'other'));
+    const order    = ['all', 'ranked', 'normal', 'aram', 'other'];
+    const visible  = order.filter(b => b === 'all' || buckets.has(b));
+    const container = $('mode-tabs');
+    if (!container) return;
+    container.innerHTML = visible.map(b => {
+        const active = b === activeMode;
+        const cls = 'tab-btn px-3 py-1 rounded text-sm transition-colors ' +
+            (active ? 'bg-violet-700 text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-700');
+        return `<button onclick="switchMode('${b}')" data-mode="${b}" class="${cls}">${MODE_LABELS[b]}</button>`;
+    }).join('');
+    const pmc = $('period-match-count');
+    if (pmc) {
+        const cnt = getFilteredMatches(activeMode, activePeriod).length;
+        pmc.textContent = activePeriod !== 'all' ? `${cnt} partidas` : '';
+    }
+}
+
+function setPeriod(period, from, to) {
+    activePeriod   = period;
+    customDateFrom = from ?? null;
+    customDateTo   = to   ?? null;
+    document.querySelectorAll('.period-btn').forEach(b => {
+        const active = b.dataset.period === period;
+        b.className = 'period-btn px-2.5 py-1 rounded text-xs transition-colors ' +
+            (active ? 'bg-violet-700 text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-700');
+    });
+    // Fall back to 'all' mode if current mode has no games in this period
+    const inPeriod = getFilteredMatches('all', period);
+    const buckets  = new Set(inPeriod.map(m => QUEUE_MODE[m.queue_id] ?? 'other'));
+    if (activeMode !== 'all' && !buckets.has(activeMode)) activeMode = 'all';
+    renderModeTabs();
+    renderProfile(activeMode);
+    renderMatchList(getFilteredMatches(activeMode, period));
+}
+
+function toggleCustomDate() {
+    const el = $('custom-date-range');
+    if (el) el.classList.toggle('hidden');
+}
+
+function applyCustomDate() {
+    const fv   = document.getElementById('custom-from').value;
+    const tv   = document.getElementById('custom-to').value;
+    const from = fv ? new Date(fv).getTime() : null;
+    const to   = tv ? new Date(tv + 'T23:59:59').getTime() : null;
+    const _cdr = $('custom-date-range');
+    if (_cdr) _cdr.classList.add('hidden');
+    document.querySelectorAll('.period-btn[data-period="custom"]').forEach(b => {
+        b.className = 'period-btn px-2.5 py-1 rounded text-xs transition-colors bg-violet-700 text-white font-semibold';
+    });
+    setPeriod('custom', from, to);
 }
 
 function setActiveTab(mode) {
-    document.querySelectorAll('.tab-btn').forEach(b => {
-        const active = b.dataset.mode === mode;
-        b.className = 'tab-btn px-3 py-1 rounded text-sm transition-colors ' +
-            (active ? 'bg-violet-700 text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-700');
-    });
+    renderModeTabs(); // kept for compatibility
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -777,7 +898,7 @@ async function syncSummoner() {
         await fetch(`/api/summoner/${encodeURIComponent(activeSummonerId)}/match-history?region=${region}&count=10&analyze=false`);
         startSyncPolling();
         const [matchRes, statsRes, rankRes] = await Promise.all([
-            fetch(`/api/db/matches?riot_id=${encodeURIComponent(activeSummonerId)}&count=50`).then(r => r.json()),
+            fetch(`/api/db/matches?riot_id=${encodeURIComponent(activeSummonerId)}&count=500`).then(r => r.json()),
             fetch(`/api/db/summoner-stats?riot_id=${encodeURIComponent(activeSummonerId)}`).then(r => r.json()),
             fetch(`/api/db/summoner-rank?riot_id=${encodeURIComponent(activeSummonerId)}&region=${region}&force=1`)
                 .then(r => r.json()).catch(() => ({ entries: [] })),
@@ -785,7 +906,8 @@ async function syncSummoner() {
         activeMatches = matchRes.matches || [];
         activeStats   = statsRes;
         activeRank    = rankRes.entries || [];
-        renderMatchList(activeMatches);
+        renderModeTabs();
+        renderMatchList(getFilteredMatches(activeMode, activePeriod));
         renderProfile(activeMode);
         document.getElementById('footer-status').textContent =
             `${activeSummonerId} · ${activeMatches.length} matches cached · ${activeStats.total ?? 0} in stats`;

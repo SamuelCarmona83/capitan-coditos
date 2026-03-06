@@ -17,7 +17,7 @@ def cached_matches():
     riot_id = request.args.get("riot_id")
     if not riot_id:
         return jsonify({"error": "riot_id is required"}), 400
-    count = min(int(request.args.get("count", 20)), 100)
+    count = min(int(request.args.get("count", 20)), 500)
     from database.match_cache import get_summoner_profile, get_cached_matches_for_puuid
     profile = get_summoner_profile(riot_id)
     if not profile:
