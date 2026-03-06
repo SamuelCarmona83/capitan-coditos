@@ -66,10 +66,13 @@ Features:
 - Summoner list with region editing and search
 - Match history timeline (ranked / normal / ARAM filter tabs)
 - Per-summoner profile: champion grid, win-rate doughnut chart, rank badge
+- **Win Rate con Amigos** — in-profile section showing W/L and win-rate vs each friend who played on the same team
 - Match detail view: team tables with damage/gold bars and AI analysis
 - Duration distribution chart (Chart.js bar + line combo, powered by Celery task)
 - Animated champion splash background and live sync progress bar
 - Fully responsive — works on desktop and mobile
+
+> **Cache-busting:** The four `<script>` tags in `api/templates/index.html` carry a `?v=N` suffix (currently `v=4`). Increment `N` whenever a `.js` file changes, then rebuild the API container so browsers fetch the latest code.
 
 ---
 

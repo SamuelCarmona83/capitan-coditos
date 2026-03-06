@@ -209,6 +209,22 @@ def summoner_rank():
     return jsonify({"riot_id": riot_id, "entries": entries})
 
 
+@db_bp.get("/summoner-companions")
+def summoner_companions():
+    """Return win-rate breakdown vs all known summoners who played on the same team."""
+    riot_id = request.args.get("riot_id")
+    if not riot_id:
+        return jsonify({"error": "riot_id is required"}), 400
+
+    from database.match_cache import get_summoner_profile, get_companion_winrates
+    profile = get_summoner_profile(riot_id)
+    if not profile:
+        return jsonify({"riot_id": riot_id, "companions": []})
+
+    companions = get_companion_winrates(profile["puuid"])
+    return jsonify({"riot_id": riot_id, "companions": companions})
+
+
 @db_bp.get("/summoners/autocomplete")
 def autocomplete():
     """
@@ -289,9 +305,9 @@ def update_summoner_region(riot_id: str):
     # 1 – Update region on the summoner document
     save_summoner(riot_id, region=region)
 
-    # 2 – Bust Redis profile cache so the stale icon is gone immediately
+    # 2 – Bust Redis profile + rank cache so stale data is gone immediately
     try:
-        _redis().delete(f"puuid:{riot_id}")
+        _redis().delete(f"puuid:{riot_id}", f"rank:{riot_id}")
     except Exception:
         pass
 

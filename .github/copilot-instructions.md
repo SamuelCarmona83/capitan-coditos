@@ -51,20 +51,23 @@ Discord Bot (bot/)  ──HTTP──►  Flask API (api/)  ──►  MongoDB  (
 The web dashboard is served at `/` and is a **vanilla JS + Tailwind CDN app — no build step**. The JS is split across four files loaded in dependency order:
 
 ```html
-<script src="/static/js/constants.js"></script>
-<script src="/static/js/components.js"></script>
-<script src="/static/js/mobile.js"></script>
-<script src="/static/js/app.js"></script>
+<script src="/static/js/constants.js?v=4"></script>
+<script src="/static/js/components.js?v=4"></script>
+<script src="/static/js/mobile.js?v=4"></script>
+<script src="/static/js/app.js?v=4"></script>
 ```
 
 **Load order is critical** — all globals are `window`-scoped, so later files depend on earlier ones.
+
+### Cache-busting
+Static JS files are served without `Cache-Control` headers, so browsers cache them aggressively. **Whenever you change any `.js` file, bump the `?v=N` query string in all four `<script>` tags in `api/templates/index.html`** before rebuilding the container. The current version is **`v=4`**. Increment it by 1 each time.
 
 ### File responsibilities
 
 | File | Contains |
 |---|---|
 | `constants.js` | `DD`, `TIER_COLOR`, `TIER_LABEL`, `ROMAN`, `QUEUE_LABEL`, `QUEUE_MODE`, `CHAMP_KEYS`, `champKey()`, `fmtDuration()`, `fmtDate()`, `dateBucket()`, `timeAgo()` |
-| `components.js` | `$()`, `mount()`, `StatsRow`, `ChampGridItem`, `MatchCard`, `RankBadge`, `ParticipantRow`, `TeamTable`, `MatchOutcomeBar`, skeleton helpers |
+| `components.js` | `$()`, `mount()`, `StatsRow`, `ChampGridItem`, `MatchCard`, `RankBadge`, `ParticipantRow`, `TeamTable`, `MatchOutcomeBar`, `CompanionRow`, skeleton helpers |
 | `mobile.js` | `mobileView`, `isMobile()`, `setMobilePanel(panel)` — panels: `'list'` `'profile'` `'matches'` `'match-detail'` |
 | `app.js` | All global state, every render/API/event function, and the `setupModalAutocomplete(); init();` bootstrap |
 
@@ -76,6 +79,7 @@ activeSummonerId
 activeMatches
 activeStats
 activeRank
+activeCompanions  // [{riot_id, games, wins, losses, win_rate, profileIconId}]
 activeMode      // 'all' | 'ranked' | 'normal' | 'aram'
 activeMatchEl   // currently selected match DOM element
 chartWR         // Chart.js doughnut (winrate ring)
@@ -84,11 +88,12 @@ durationCache   // { [riot_id]: result } — in-memory cache per summoner
 ```
 
 ### Key flow
-1. **`selectSummoner(riot_id)`** — fetches matches + stats + rank in parallel, calls `renderProfile()` + `runDurationAnalysis()`.
-2. **`renderProfile(mode)`** — builds stats row, champ grid, profile header (splash crossfade + rank badge), triggers duration chart.
-3. **`runDurationAnalysis(force=false)`** — checks `durationCache` first; if miss, POSTs task, polls every 2s, calls `renderDurationResult()` on success. The ↻ button passes `force=true`.
-4. **`selectMatch(match_id)`** — hides profile view, shows match view with team tables.
-5. **`closeMatch()`** / **`closeProfile()`** — restore previous state.
+1. **`selectSummoner(riot_id)`** — fetches matches + stats + rank + companion win-rates in a single `Promise.all`, then calls `renderProfile()` + `runDurationAnalysis()`.
+2. **`renderProfile(mode)`** — builds stats row, champ grid, companion section, profile header (splash crossfade + rank badge), triggers duration chart.
+3. **`renderCompanions()`** — renders `#companions-section` from `activeCompanions`; hides the div when the list is empty.
+4. **`runDurationAnalysis(force=false)`** — checks `durationCache` first; if miss, POSTs task, polls every 2s, calls `renderDurationResult()` on success. The ↻ button passes `force=true`.
+5. **`selectMatch(match_id)`** — hides profile view, shows match view with team tables.
+6. **`closeMatch()`** / **`closeProfile()`** — restore previous state.
 
 ### Adding a new UI component
 1. Add the pure function to `components.js` (returns an HTML string, no side effects).
@@ -187,6 +192,9 @@ macOS AirPlay occupies 5000. Production compose maps **host 5001 → container 5
 | CommunityDragon SVG 404 | Wrong plugin path or uppercase tier | Use `rcp-fe-lol-static-assets` and lowercase tier names |
 | Stats capped at 250 games | `.limit(250)` left in `get_summoner_match_stats()` | Remove the `.limit()` call in `api/database/match_cache.py` |
 | Task stuck in PENDING | Celery worker not connected | Check `docker logs capitan-celery-worker`; verify Redis URL |
+| UI changes not visible after rebuild | Browser cached old `.js` files | Bump `?v=N` in all four `<script>` tags in `index.html`, then rebuild |
+| Companion icons not showing | `profileIconId` only in `summoner_profiles.profile` sub-doc | Query `profile.profileIconId` and embed it in the companions API response (already done in `get_companion_winrates`) |
+| Companion data stale after profile sync | Redis `companions:{puuid}` not cleared | `clear_analysis_cache(riot_id, puuid=puuid)` deletes the key; also run `redis-cli --scan --pattern "companions:*" | xargs redis-cli DEL` to force-flush |
 
 ---
 

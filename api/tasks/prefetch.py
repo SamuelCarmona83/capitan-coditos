@@ -25,7 +25,7 @@ def prefetch_matches():
     PREFETCH_COUNT = int(os.getenv("PREFETCH_MATCH_COUNT", "20"))
 
     async def _run():
-        from database.summoners import get_all_summoner_ids
+        from database.summoners import get_summoners_with_region
         from database.match_cache import (
             get_summoner_profile,
             store_summoner_profile,
@@ -37,30 +37,29 @@ def prefetch_matches():
             get_summoner_profile_sync,
             get_match_history_sync,
             _fetch_match_safe_sync,
-            get_region_routing,
         )
         from services.match_logic import parse_riot_id
 
-        summoner_ids = get_all_summoner_ids()
-        print(f"[prefetch] Starting for {len(summoner_ids)} summoners, {PREFETCH_COUNT} matches each")
+        summoner_pairs = get_summoners_with_region(200)
+        print(f"[prefetch] Starting for {len(summoner_pairs)} summoners, {PREFETCH_COUNT} matches each")
         new_stored = 0
         errors = 0
 
-        for riot_id in summoner_ids:
+        for riot_id, region, _ts in summoner_pairs:
             try:
-                # Resolve PUUID
+                # Resolve PUUID (use cache if available)
                 cached_profile = get_summoner_profile(riot_id)
                 if cached_profile:
                     puuid = cached_profile["puuid"]
                 else:
                     game_name, tag_line = parse_riot_id(riot_id)
-                    summoner = get_summoner_data_sync(game_name, tag_line)
+                    summoner = get_summoner_data_sync(game_name, tag_line, region)
                     puuid = summoner["puuid"]
-                    profile = get_summoner_profile_sync(puuid)
+                    profile = get_summoner_profile_sync(puuid, region)
                     store_summoner_profile(riot_id, puuid, profile)
 
                 # Get recent match IDs
-                match_ids = await asyncio.to_thread(get_match_history_sync, puuid, PREFETCH_COUNT)
+                match_ids = await asyncio.to_thread(get_match_history_sync, puuid, PREFETCH_COUNT, region)
                 already_cached = get_cached_match_ids_for_puuid(puuid)
                 missing = [m for m in match_ids if m not in already_cached]
 
@@ -68,7 +67,7 @@ def prefetch_matches():
                 for i, match_id in enumerate(missing):
                     if i > 0:
                         await asyncio.sleep(1.3)  # respect Riot rate limit
-                    data = await asyncio.to_thread(_fetch_match_safe_sync, match_id)
+                    data = await asyncio.to_thread(_fetch_match_safe_sync, match_id, region)
                     if data:
                         store_match(match_id, data)
                         new_stored += 1

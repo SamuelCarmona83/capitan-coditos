@@ -63,6 +63,7 @@ def sync_all_matches():
         for idx, (riot_id, region, _ts) in enumerate(summoner_pairs, 1):
             _set_progress(r, current=idx, current_summoner=riot_id, new_matches=new_stored, errors=errors)
             try:
+                # Always resolve puuid (use cache if available)
                 cached = get_summoner_profile(riot_id)
                 if cached:
                     puuid = cached["puuid"]
@@ -70,8 +71,11 @@ def sync_all_matches():
                     game_name, tag_line = parse_riot_id(riot_id)
                     summoner = get_summoner_data_sync(game_name, tag_line, region)
                     puuid = summoner["puuid"]
-                    profile = get_summoner_profile_sync(puuid, region)
-                    store_summoner_profile(riot_id, puuid, profile)
+
+                # Always refresh profile data (rank, icon, level)
+                profile = get_summoner_profile_sync(puuid, region)
+                store_summoner_profile(riot_id, puuid, profile)
+                await asyncio.sleep(0.5)  # small pause after profile refresh
 
                 already_cached = get_cached_match_ids_for_puuid(puuid)
                 match_ids = []
@@ -96,7 +100,7 @@ def sync_all_matches():
 
                 # Invalidate cached analysis when new matches were added
                 if missing:
-                    clear_analysis_cache(riot_id)
+                    clear_analysis_cache(riot_id, puuid=puuid)
 
             except Exception as exc:
                 errors += 1

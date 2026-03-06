@@ -299,3 +299,27 @@ function MatchTimelineCharts() {
       </div>
     </div>`;
 }
+
+function CompanionRow(c) {
+    const iconUrl = c.profileIconId ? `${DD}/img/profileicon/${c.profileIconId}.png` : '';
+    const wr = c.win_rate;
+    const wrColor  = wr >= 55 ? 'text-emerald-400' : wr >= 45 ? 'text-slate-300' : 'text-red-400';
+    const barColor = wr >= 55 ? 'bg-emerald-500'   : wr >= 45 ? 'bg-slate-400'   : 'bg-red-500';
+    const escapedId = c.riot_id.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    return `
+    <div data-companion-id="${escapedId}" class="flex items-center gap-2.5 px-2 py-2 cursor-pointer hover:bg-slate-700/50 rounded-lg transition-colors">
+      ${iconUrl
+        ? `<img src="${iconUrl}" class="w-8 h-8 rounded-full shrink-0 border border-slate-600/60" onerror="this.style.display='none'">`
+        : '<div class="w-8 h-8 rounded-full bg-slate-700 shrink-0 border border-slate-600/40"></div>'}
+      <div class="flex-1 min-w-0">
+        <div class="text-xs font-medium truncate text-slate-200">${c.riot_id}</div>
+        <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
+          <div class="h-full rounded-full ${barColor}" style="width:${wr}%"></div>
+        </div>
+      </div>
+      <div class="text-right shrink-0 ml-1">
+        <div class="text-sm font-bold ${wrColor}">${wr}%</div>
+        <div class="text-[10px] text-slate-500">${c.wins}W ${c.losses}L · ${c.games}g</div>
+      </div>
+    </div>`;
+}

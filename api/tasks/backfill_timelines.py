@@ -27,7 +27,7 @@ def _ensure_connections():
 
 
 @celery_app.task(name="tasks.backfill_timelines.backfill_timelines")
-def backfill_timelines():
+def backfill_timelines(_chain_result=None):
     """Fetch and cache timelines for matches missing them."""
     _ensure_connections()
 

@@ -6,6 +6,7 @@ let activeStats      = null;
 let activeMode       = 'all';
 let activeMatchEl    = null;
 let activeRank       = null;
+let activeCompanions = [];
 let chartWR = null, chartCH = null, chartDUR = null;
 
 /* ── Chart colour palette for duration buckets ───────────────────── */
@@ -309,6 +310,9 @@ async function selectSummoner(riot_id, el, _fromHash = false) {
     activeMatchEl    = null;
     activeMode       = 'all';
     activeRank       = null;
+    activeCompanions = [];
+    const _cs = $('companions-section');
+    if (_cs) { _cs.innerHTML = ''; _cs.classList.add('hidden'); }
 
     document.getElementById('sync-btn').classList.remove('hidden');
     mount('match-history', skeletonMatchList());
@@ -362,16 +366,19 @@ async function selectSummoner(riot_id, el, _fromHash = false) {
     }
 
     const region = summoner?.region ?? 'LAN';
-    const [matchRes, statsRes, rankRes] = await Promise.all([
+    const [matchRes, statsRes, rankRes, companionsRes] = await Promise.all([
         fetch(`/api/db/matches?riot_id=${encodeURIComponent(riot_id)}&count=50`).then(r => r.json()),
         fetch(`/api/db/summoner-stats?riot_id=${encodeURIComponent(riot_id)}`).then(r => r.json()),
         fetch(`/api/db/summoner-rank?riot_id=${encodeURIComponent(riot_id)}&region=${region}`)
             .then(r => r.json()).catch(() => ({ entries: [] })),
+        fetch(`/api/db/summoner-companions?riot_id=${encodeURIComponent(riot_id)}`)
+            .then(r => r.json()).catch(() => ({ companions: [] })),
     ]);
 
-    activeMatches = matchRes.matches || [];
-    activeStats   = statsRes;
-    activeRank    = rankRes.entries || [];
+    activeMatches    = matchRes.matches  || [];
+    activeStats      = statsRes;
+    activeRank       = rankRes.entries   || [];
+    activeCompanions = companionsRes.companions || [];
 
     document.getElementById('footer-status').textContent =
         `${riot_id} · ${activeMatches.length} matches cached · ${activeStats.total ?? 0} in stats`;
@@ -446,6 +453,7 @@ function renderProfile(mode) {
     mount('stats-row', StatsRow({ total, wins, losses, winrate, kda }));
     renderWinrateChart(wins, losses, avgDur);
     renderChampGrid(champs);
+    renderCompanions();
     renderProfileHeader();
     runDurationAnalysis();
     runHeatmapAnalysis();
@@ -472,6 +480,30 @@ function renderProfileHeader() {
 
 function renderChampGrid(champs) {
     mount('champ-grid', champs.slice(0, 6).map(ChampGridItem).join(''));
+}
+
+function renderCompanions() {
+    const sec = $('companions-section');
+    if (!sec) return;
+    if (!activeCompanions || activeCompanions.length === 0) {
+        sec.classList.add('hidden');
+        sec.innerHTML = '';
+        return;
+    }
+    const rows = activeCompanions.slice(0, 8).map(CompanionRow).join('');
+    sec.innerHTML = `
+    <div class="bg-slate-800 rounded-lg p-3">
+      <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">🤝 Win Rate con Amigos</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-0.5">${rows}</div>
+    </div>`;
+    sec.classList.remove('hidden');
+    sec.querySelectorAll('[data-companion-id]').forEach(el => {
+        el.onclick = () => {
+            const cid = el.dataset.companionId;
+            const li  = document.querySelector(`[data-riot-id="${CSS.escape(cid)}"]`);
+            selectSummoner(cid, li);
+        };
+    });
 }
 
 function switchMode(mode) {

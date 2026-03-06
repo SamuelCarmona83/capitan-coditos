@@ -183,15 +183,91 @@ def set_analysis_cache(riot_id: str, analysis_type: str, data: dict, ttl: int = 
         pass
 
 
-def clear_analysis_cache(riot_id: str, analysis_type: str = None):
-    """Clear analysis caches for a summoner.  If type is None, clear all types."""
+def clear_analysis_cache(riot_id: str, analysis_type: str = None, puuid: str = None):
+    """Clear analysis caches for a summoner.  If type is None, clear all types.
+    Pass puuid to also invalidate the companions cache (only done on full reset).
+    """
     try:
         r = _redis()
         types = [analysis_type] if analysis_type else list(_ANALYSIS_TTL.keys())
         for t in types:
             r.delete(f"analysis:{t}:{riot_id}")
+        if analysis_type is None and puuid:
+            r.delete(f"companions:{puuid}")
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Companion win-rate cache
+# ---------------------------------------------------------------------------
+
+def get_companion_winrates(puuid: str) -> list:
+    """Return win-rate stats for every known summoner who played on the same
+    team as *puuid*.  Results are cached in Redis for 30 min."""
+    cache_key = f"companions:{puuid}"
+    try:
+        raw = _redis().get(cache_key)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+
+    db = get_db()
+
+    # Build {puuid -> (riot_id, profileIconId)} map for all registered summoners
+    profile_docs = db["summoner_profiles"].find({}, {"_id": 1, "puuid": 1, "profile.profileIconId": 1})
+    known = {
+        doc["puuid"]: {"riot_id": doc["_id"], "profileIconId": doc.get("profile", {}).get("profileIconId")}
+        for doc in profile_docs
+        if doc.get("puuid") and doc["puuid"] != puuid
+    }
+
+    if not known:
+        return []
+
+    # Aggregate per companion across all matches where subject participated
+    companions: dict = {}
+    for doc in db["matches"].find(
+        {"data.metadata.participants": puuid},
+        {"data.info.participants": 1},
+    ):
+        participants = doc["data"]["info"]["participants"]
+        subject = next((p for p in participants if p.get("puuid") == puuid), None)
+        if not subject:
+            continue
+        team_id  = subject.get("teamId")
+        did_win  = subject.get("win", False)
+        for p in participants:
+            p_puuid = p.get("puuid", "")
+            if p_puuid == puuid or p.get("teamId") != team_id:
+                continue
+            if p_puuid not in known:
+                continue
+            riot_id = known[p_puuid]["riot_id"]
+            c = companions.setdefault(riot_id, {"games": 0, "wins": 0, "profileIconId": known[p_puuid]["profileIconId"]})
+            c["games"] += 1
+            if did_win:
+                c["wins"] += 1
+
+    result = [
+        {
+            "riot_id":      riot_id,
+            "games":        v["games"],
+            "wins":         v["wins"],
+            "losses":       v["games"] - v["wins"],
+            "win_rate":     round(v["wins"] / v["games"] * 100, 1) if v["games"] else 0,
+            "profileIconId": v.get("profileIconId"),
+        }
+        for riot_id, v in companions.items()
+    ]
+    result.sort(key=lambda x: x["games"], reverse=True)
+
+    try:
+        _redis().setex(cache_key, 1800, json.dumps(result))
+    except Exception:
+        pass
+    return result
 
 
 # ---------------------------------------------------------------------------

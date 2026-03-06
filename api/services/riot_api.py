@@ -54,15 +54,23 @@ def get_region_routing(region: str = None):
 # Low-level HTTP
 # ---------------------------------------------------------------------------
 
-def _make_riot_request(url: str) -> dict:
+def _make_riot_request(url: str, retries: int = 3) -> dict:
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    response = _requests.get(url, headers=headers, timeout=10)
-    if response.status_code == 404:
-        raise ValueError("Summoner not found.")
-    if response.status_code == 429:
-        raise ValueError("Rate limit exceeded. Please try again later.")
-    response.raise_for_status()
-    return response.json()
+    for attempt in range(retries):
+        response = _requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 404:
+            raise ValueError("Summoner not found.")
+        if response.status_code == 429:
+            wait = int(response.headers.get("Retry-After", 5)) + 1
+            print(f"[riot-api] 429 rate limit, waiting {wait}s (attempt {attempt+1}/{retries})")
+            time.sleep(wait)
+            continue
+        if response.status_code >= 500:
+            time.sleep(2)
+            continue
+        response.raise_for_status()
+        return response.json()
+    raise ValueError("Rate limit exceeded after retries. Please try again later.")
 
 
 def _fetch_match_safe_sync(match_id: str, region: str = None) -> dict | None:
