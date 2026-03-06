@@ -69,6 +69,7 @@ def cached_match_detail(match_id: str):
             "damageToTurrets": p.get("damageDealtToTurrets", 0),
             "teamPosition": p.get("teamPosition", ""),
             "puuid": p.get("puuid", ""),
+            "items": [p.get(f"item{i}", 0) for i in range(7)],
         }
 
     # ── Per-minute timeline metrics for focused player ──

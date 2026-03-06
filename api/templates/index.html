@@ -325,10 +325,19 @@
         </div>
     </div>
 
-    <script src="/static/js/constants.js?v=8"></script>
-    <script src="/static/js/components.js?v=8"></script>
-    <script src="/static/js/mobile.js?v=8"></script>
-    <script src="/static/js/app.js?v=8"></script>
+    <!-- Item tooltip overlay -->
+    <div id="item-tooltip" class="hidden fixed z-[9999] pointer-events-none" style="top:0;left:0;max-width:280px">
+      <div class="bg-slate-900/95 border border-slate-600/60 rounded-lg p-3 shadow-2xl backdrop-blur-sm">
+        <div id="item-tooltip-name" class="font-bold text-yellow-300 text-sm mb-0.5"></div>
+        <div id="item-tooltip-cost" class="text-xs text-yellow-600/80 mb-2"></div>
+        <div id="item-tooltip-desc" class="text-xs text-slate-300 leading-relaxed whitespace-pre-line"></div>
+      </div>
+    </div>
+
+    <script src="/static/js/constants.js?v=12"></script>
+    <script src="/static/js/components.js?v=12"></script>
+    <script src="/static/js/mobile.js?v=12"></script>
+    <script src="/static/js/app.js?v=12"></script>
 </body>
 
 </html>

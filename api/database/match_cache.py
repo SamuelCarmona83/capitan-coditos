@@ -324,6 +324,7 @@ def get_cached_matches_for_puuid(puuid: str, count: int = 20) -> list:
             "queue_id": info.get("queueId", 0),
             "game_duration": info.get("gameDuration", 0),
             "game_creation": info.get("gameCreation", 0),
+            "items": [p.get(f"item{i}", 0) for i in range(7)],
         })
     return result
 

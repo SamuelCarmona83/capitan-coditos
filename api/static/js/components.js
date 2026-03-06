@@ -60,6 +60,7 @@ function MatchHistoryRow(m) {
     const kdaColor = !m.deaths ? 'text-yellow-400' : (m.kills + m.assists) / m.deaths >= 3 ? 'text-blue-400' : (m.kills + m.assists) / m.deaths >= 1.5 ? 'text-slate-200' : 'text-red-400';
     const dur = m.game_duration ? fmtDuration(m.game_duration) : '';
     const ago = m.game_creation ? timeAgo(m.game_creation) : '';
+    const itemsHtml = m.items ? ItemStrip(m.items) : '';
 
     return `
     <div class="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 cursor-pointer ${hoverBg} transition-colors border-l-2 ${border} border-b border-slate-700/20" data-match-id="${m.match_id}">
@@ -70,6 +71,7 @@ function MatchHistoryRow(m) {
       <div class="w-16 sm:w-20 min-w-0 shrink-0">
         <div class="text-xs sm:text-sm font-medium truncate">${m.champion}</div>
       </div>
+      ${itemsHtml}
       <div class="w-14 sm:w-20 text-center shrink-0">
         <div class="text-xs sm:text-sm font-semibold ${kdaColor}">${kda}</div>
         <div class="text-[10px] text-slate-500">${kdaVal} KDA</div>
@@ -107,14 +109,35 @@ function RankBadge(soloEntry) {
     </div>`;
 }
 
+function ItemStrip(items, size = 22) {
+    if (!items || !items.length) return '';
+    const sz = `width:${size}px;height:${size}px`;
+    const slot = id => {
+        if (!id) return `<div style="${sz}" class="rounded bg-slate-700/50 border border-slate-600/20 shrink-0 inline-block"></div>`;
+        return `<img src="${DD}/img/item/${id}.png"
+             style="${sz}" class="rounded shrink-0 cursor-help border border-slate-600/20 hover:border-yellow-400/60 hover:scale-125 transition-transform inline-block"
+             data-item-id="${id}" loading="lazy" onerror="this.style.display='none'" alt="">`;
+    };
+    const main = items.slice(0, 6).map(id => slot(id)).join('');
+    const tri  = slot(items[6] !== undefined ? items[6] : 0);
+    return `
+    <div class="flex items-center gap-0.5">
+      ${main}
+      <div class="w-px h-3.5 bg-slate-600/40 mx-1 shrink-0"></div>
+      ${tri}
+    </div>`;
+}
+
 function ParticipantRow(p, isFocused, teamWin, maxDmg, maxGold, gameDur) {
     const dmgPct  = Math.round(p.totalDamageDealtToChampions / maxDmg * 100);
     const cspm = gameDur > 0 ? (p.cs / (gameDur / 60)).toFixed(1) : '?';
     const rowBg = isFocused
         ? (teamWin ? 'bg-blue-900/20 border-l-2 border-l-blue-400' : 'bg-red-900/15 border-l-2 border-l-red-400')
         : 'border-l-2 border-l-transparent';
+    const itemsHtml = p.items ? ItemStrip(p.items) : '';
     return `
-    <div class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 ${rowBg} hover:bg-slate-700/20 transition-colors">
+    <div class="${rowBg} hover:bg-slate-700/20 transition-colors">
+      <div class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5">
       <img src="${DD}/img/champion/${champKey(p.champion)}.png" class="w-7 h-7 sm:w-8 sm:h-8 rounded shrink-0" onerror="this.style.display='none'">
       <div class="w-20 sm:w-28 min-w-0 shrink-0">
         <div class="text-[11px] sm:text-xs font-semibold truncate flex items-center gap-1">
@@ -135,6 +158,8 @@ function ParticipantRow(p, isFocused, teamWin, maxDmg, maxGold, gameDur) {
       </div>
       <div class="hidden sm:block w-10 text-right text-xs text-yellow-500/60 shrink-0">${(p.goldEarned/1000).toFixed(1)}k</div>
       <div class="hidden sm:block w-5 text-right text-[10px] text-slate-600 shrink-0">${p.visionScore}</div>
+      </div>
+      ${itemsHtml ? `<div class="px-2 sm:px-3 pb-1.5">${itemsHtml}</div>` : ''}
     </div>`;
 }
 

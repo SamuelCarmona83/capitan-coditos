@@ -27,6 +27,9 @@ let chartGoldPM = null, chartDamagePM = null, chartCSPM = null;
 /* ── Match detail timeline chart instances ────────────────────────── */
 let matchChartGold = null, matchChartDamage = null, matchChartCS = null;
 
+/* ── DDragon item data (populated in init) ───────────────────────── */
+let ITEMS = {};
+
 /* ── Sync progress polling state ─────────────────────────────────── */
 let syncPollTimer = null;
 
@@ -120,6 +123,13 @@ async function init() {
         .then(r => r.json())
         .then(({ data }) => renderSplash(Object.keys(data), version))
         .catch(() => {});
+
+    fetch(`https://ddragon.leagueoflegends.com/cdn/${version}/data/en_US/item.json`)
+        .then(r => r.json())
+        .then(({ data }) => { ITEMS = data; })
+        .catch(() => {});
+
+    setupItemTooltip();
 
     await refreshSummonerList();
 
@@ -1435,6 +1445,50 @@ function startSyncPolling() {
             }, 1500);
         }
     }, 2500);
+}
+
+/* ── Item tooltip ────────────────────────────────────────────────── */
+function _stripItemDesc(html) {
+    if (!html) return '';
+    return html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<li>/gi, '\n• ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function setupItemTooltip() {
+    const tt   = document.getElementById('item-tooltip');
+    const name = document.getElementById('item-tooltip-name');
+    const cost = document.getElementById('item-tooltip-cost');
+    const desc = document.getElementById('item-tooltip-desc');
+    if (!tt) return;
+
+    document.addEventListener('mousemove', e => {
+        const icon = e.target.closest('[data-item-id]');
+        if (!icon) { tt.classList.add('hidden'); return; }
+        const id = icon.dataset.itemId;
+        if (!id || id === '0') { tt.classList.add('hidden'); return; }
+        const item = ITEMS[id];
+        if (!item) { tt.classList.add('hidden'); return; }
+
+        name.textContent = item.name || '';
+        cost.textContent = item.gold ? `${item.gold.total} gold` : '';
+        desc.textContent = _stripItemDesc(item.description || item.plaintext || '');
+
+        tt.classList.remove('hidden');
+        const pad = 14;
+        const tw = tt.offsetWidth, th = tt.offsetHeight;
+        let x = e.clientX + pad, y = e.clientY + pad;
+        if (x + tw > window.innerWidth  - 8) x = e.clientX - tw - pad;
+        if (y + th > window.innerHeight - 8) y = e.clientY - th - pad;
+        tt.style.left = x + 'px';
+        tt.style.top  = y + 'px';
+    });
+
+    document.addEventListener('mouseleave', () => tt.classList.add('hidden'), true);
 }
 
 /* ── Bootstrap ───────────────────────────────────────────────────── */
