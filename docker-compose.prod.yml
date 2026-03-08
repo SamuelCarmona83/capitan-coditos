@@ -36,7 +36,7 @@ services:
       context: ./api
       dockerfile: Dockerfile
     container_name: capitan-celery-worker
-    command: celery -A tasks.celery_app.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A tasks.celery_app.celery_app worker --loglevel=info --concurrency=4 --without-mingle --without-gossip
     restart: unless-stopped
     env_file:
       - .env
@@ -107,13 +107,25 @@ services:
     image: redis:7-alpine
     container_name: capitan-redis
     restart: unless-stopped
+    # Redis is a pure cache — MongoDB is the source of truth.
+    # --save "": disable RDB snapshots entirely; the 1.7 GB dump was causing
+    #   the restart loop (fork for BGSAVE OOM-killed on every write burst).
+    # --maxmemory 1500mb + allkeys-lru: evict any LRU key (including match:*
+    #   and timeline:* which have no TTL) before hitting system limits.
+    command: >
+      redis-server
+      --save ""
+      --appendonly no
+      --maxmemory 1500mb
+      --maxmemory-policy allkeys-lru
     networks:
       - app-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 15s
 
 volumes:
   mongodata:

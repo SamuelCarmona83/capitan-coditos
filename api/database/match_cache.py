@@ -21,7 +21,12 @@ _redis_client: redis.Redis = None
 
 def init_redis(redis_url: str):
     global _redis_client
-    _redis_client = redis.from_url(redis_url, decode_responses=True)
+    _redis_client = redis.from_url(
+        redis_url,
+        decode_responses=True,
+        socket_connect_timeout=2,   # fail fast when Redis is down/restarting
+        socket_timeout=2,           # don't block a gunicorn worker for 30s
+    )
 
 
 def _redis() -> redis.Redis:
@@ -38,9 +43,12 @@ def _redis() -> redis.Redis:
 def get_match(match_id: str) -> Optional[dict]:
     """Return full match data dict or None.  Checks Redis then MongoDB."""
     # L1 – Redis
-    raw = _redis().get(f"match:{match_id}")
-    if raw:
-        return json.loads(raw)
+    try:
+        raw = _redis().get(f"match:{match_id}")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
 
     # L2 – MongoDB
     doc = get_db()["matches"].find_one({"_id": match_id})
@@ -115,9 +123,12 @@ def store_timeline(match_id: str, data: dict):
 
 def get_summoner_profile(riot_id: str) -> Optional[dict]:
     """Return {'puuid': ..., 'profile': {...}} or None."""
-    raw = _redis().get(f"puuid:{riot_id}")
-    if raw:
-        return json.loads(raw)
+    try:
+        raw = _redis().get(f"puuid:{riot_id}")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass  # Redis unavailable / still loading — fall through to MongoDB
 
     doc = get_db()["summoner_profiles"].find_one({"_id": riot_id})
     if doc:
@@ -157,23 +168,82 @@ def store_summoner_profile(riot_id: str, puuid: str, profile: dict):
 # ---------------------------------------------------------------------------
 
 _ANALYSIS_TTL = {
-    "stats": 1800,      # 30 min – recomputed from local DB, cheap-ish
-    "duration": 21600,  # 6 h   – expensive Riot timeline calls
-    "heatmap": 21600,   # 6 h   – expensive Riot timeline calls
+    "stats": 1800,        # 30 min – recomputed from local DB, cheap-ish
+    "duration": 21600,    # 6 h   – expensive Riot timeline calls
+    "heatmap": 21600,     # 6 h   – expensive Riot timeline calls
+    "heatmap_aram": 21600,# 6 h   – ARAM heatmap (Howling Abyss)
 }
 
+# Types that are worth persisting long-term in MongoDB (expensive to recompute)
+_PERSIST_TYPES = frozenset({"duration", "heatmap", "heatmap_aram"})
+
+
+def get_analysis_mongo(riot_id: str, analysis_type: str) -> Optional[dict]:
+    """Return MongoDB-persisted analysis entry {result, computed_at} or None."""
+    if analysis_type not in _PERSIST_TYPES:
+        return None
+    try:
+        db = get_db()
+        doc = db["summoner_profiles"].find_one(
+            {"_id": riot_id},
+            {f"analysis.{analysis_type}": 1},
+        )
+        if not doc:
+            return None
+        entry = doc.get("analysis", {}).get(analysis_type)
+        if entry and entry.get("result"):
+            return entry  # {"computed_at": datetime, "result": {...}}
+    except Exception:
+        pass
+    return None
+
+
+def set_analysis_mongo(riot_id: str, analysis_type: str, data: dict):
+    """Persist analysis result in MongoDB summoner_profiles.analysis.<type> subdoc."""
+    if analysis_type not in _PERSIST_TYPES:
+        return
+    try:
+        db = get_db()
+        db["summoner_profiles"].update_one(
+            {"_id": riot_id},
+            {
+                "$set": {
+                    f"analysis.{analysis_type}": {
+                        "computed_at": datetime.now(timezone.utc),
+                        "result": data,
+                    }
+                }
+            },
+        )
+    except Exception:
+        pass
+
+
 def get_analysis_cache(riot_id: str, analysis_type: str) -> Optional[dict]:
-    """Return cached analysis result or None."""
+    """Return cached analysis result or None.  Checks Redis first, then MongoDB."""
     key = f"analysis:{analysis_type}:{riot_id}"
     try:
         raw = _redis().get(key)
-        return json.loads(raw) if raw else None
+        if raw:
+            return json.loads(raw)
     except Exception:
-        return None
+        pass
+    # Redis miss – fall back to MongoDB long-term store and re-warm Redis
+    entry = get_analysis_mongo(riot_id, analysis_type)
+    if entry:
+        result = entry.get("result")
+        if result:
+            try:
+                ttl = _ANALYSIS_TTL.get(analysis_type, 3600)
+                _redis().setex(key, ttl, json.dumps(result))
+            except Exception:
+                pass
+            return result
+    return None
 
 
 def set_analysis_cache(riot_id: str, analysis_type: str, data: dict, ttl: int = None):
-    """Store analysis result in Redis with TTL."""
+    """Store analysis result in Redis with TTL, and persist to MongoDB for long-term storage."""
     key = f"analysis:{analysis_type}:{riot_id}"
     if ttl is None:
         ttl = _ANALYSIS_TTL.get(analysis_type, 3600)
@@ -181,6 +251,8 @@ def set_analysis_cache(riot_id: str, analysis_type: str, data: dict, ttl: int = 
         _redis().setex(key, ttl, json.dumps(data))
     except Exception:
         pass
+    # Persist to MongoDB so results survive Redis flushes and TTL expiry
+    set_analysis_mongo(riot_id, analysis_type, data)
 
 
 def clear_analysis_cache(riot_id: str, analysis_type: str = None, puuid: str = None):

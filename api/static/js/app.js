@@ -18,7 +18,7 @@ const durationCache   = {};
 
 /* ── Heatmap task state ──────────────────────────────────────────── */
 let heatmapPollTimer = null;
-const heatmapCache   = {};
+const heatmapCache   = {};  // keyed by "riot_id:map_id" e.g. "Player#LAN:11"
 let _heatPalette     = null;
 
 /* ── Timeline per-minute chart instances ──────────────────────────── */
@@ -1030,7 +1030,7 @@ async function runDurationAnalysis(force = false) {
             if (sc.cached) {
                 btn.disabled = false; btn.style.animation = '';
                 durationCache[activeSummonerId] = sc.result;
-                renderDurationResult(sc.result);
+                renderDurationResult(sc.result, sc.computed_at);
                 return;
             }
         } catch (_) { /* fall through to task */ }
@@ -1044,14 +1044,19 @@ async function runDurationAnalysis(force = false) {
     const region   = summoner?.region ?? 'LAN';
     let taskId;
     try {
-        const res = await fetch('/api/tasks/duration-stats', {
+        const r = await fetch('/api/tasks/duration-stats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ riot_id: activeSummonerId, count: 50, region, force: !!force })
-        }).then(r => r.json());
+        });
+        const res = await r.json();
+        if (!r.ok || !res.task_id) {
+            content.innerHTML = `<div class="absolute inset-0 flex items-center justify-center text-yellow-400 text-xs p-2">${res.error || 'Queue unavailable, please retry'}</div>`;
+            btn.disabled = false; btn.style.animation = ''; return;
+        }
         taskId = res.task_id;
     } catch (e) {
-        content.innerHTML = `<div class="text-red-400 text-xs p-2">${e.message}</div>`;
+        content.innerHTML = `<div class="absolute inset-0 flex items-center justify-center text-red-400 text-xs p-2">${e.message}</div>`;
         btn.disabled = false; btn.style.animation = ''; return;
     }
 
@@ -1073,7 +1078,7 @@ async function runDurationAnalysis(force = false) {
     }, 2000);
 }
 
-function renderDurationResult(result) {
+function renderDurationResult(result, computedAt = null) {
     const content = document.getElementById('duration-content');
     if (!result || result.error) {
         content.innerHTML = `<div class="absolute inset-0 flex items-center justify-center text-red-400 text-sm">${result?.error || 'No data'}</div>`;
@@ -1090,7 +1095,8 @@ function renderDurationResult(result) {
     if (meta) meta.innerHTML = `
         <span><b class="text-white">${stats.total_analyzed ?? 0}</b>g</span>
         <span><b class="text-white">${(stats.avg_duration_min ?? 0).toFixed(1)}</b>m</span>
-        <span class="font-semibold ${wr >= 50 ? 'text-blue-400' : 'text-red-400'}">${wr.toFixed(1)}%</span>`;
+        <span class="font-semibold ${wr >= 50 ? 'text-blue-400' : 'text-red-400'}">${wr.toFixed(1)}%</span>
+        ${computedAt ? `<span class="text-slate-600" title="${computedAt}">${timeAgo(new Date(computedAt))}</span>` : ''}`;
 
     const labels   = buckets.map(b => b.label);
     const pctData  = buckets.map(b => +(b.pct     ?? 0).toFixed(1));
@@ -1136,6 +1142,21 @@ function renderDurationResult(result) {
    POSITION HEATMAP
 ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * Returns 12 (Howling Abyss) if the summoner's filtered matches are
+ * predominantly ARAM, otherwise 11 (Summoner's Rift).
+ * Uses the current mode tab: if explicitly on 'aram' → 12,
+ * if explicitly on a SR mode → 11, if 'all' → auto-detect by count.
+ */
+function detectDominantMapId() {
+    if (activeMode === 'aram') return 12;
+    if (activeMode === 'ranked' || activeMode === 'normal') return 11;
+    // 'all' or 'other' — count from activeMatches
+    if (!activeMatches || !activeMatches.length) return 11;
+    const aramCount = activeMatches.filter(m => (QUEUE_MODE[m.queue_id] ?? 'other') === 'aram').length;
+    return aramCount / activeMatches.length >= 0.5 ? 12 : 11;
+}
+
 function getHeatPalette() {
     if (_heatPalette) return _heatPalette;
     const c = document.createElement('canvas');
@@ -1159,9 +1180,13 @@ function getHeatPalette() {
 async function runHeatmapAnalysis(force = false) {
     if (!activeSummonerId) return;
 
+    const map_id    = detectDominantMapId();
+    const cacheType = map_id === 12 ? 'heatmap_aram' : 'heatmap';
+    const cacheKey  = `${activeSummonerId}:${map_id}`;
+
     // 1. JS in-memory cache
-    if (!force && heatmapCache[activeSummonerId]) {
-        renderHeatmapResult(heatmapCache[activeSummonerId]);
+    if (!force && heatmapCache[cacheKey]) {
+        renderHeatmapResult(heatmapCache[cacheKey]);
         return;
     }
 
@@ -1174,11 +1199,11 @@ async function runHeatmapAnalysis(force = false) {
     // 2. Server-side Redis cache (instant if available)
     if (!force) {
         try {
-            const sc = await fetch(`/api/db/analysis-cache?riot_id=${encodeURIComponent(activeSummonerId)}&type=heatmap`).then(r => r.json());
+            const sc = await fetch(`/api/db/analysis-cache?riot_id=${encodeURIComponent(activeSummonerId)}&type=${cacheType}`).then(r => r.json());
             if (sc.cached) {
                 btn.disabled = false; btn.style.animation = '';
-                heatmapCache[activeSummonerId] = sc.result;
-                renderHeatmapResult(sc.result);
+                heatmapCache[cacheKey] = sc.result;
+                renderHeatmapResult(sc.result, sc.computed_at);
                 return;
             }
         } catch (_) { /* fall through to task */ }
@@ -1192,11 +1217,16 @@ async function runHeatmapAnalysis(force = false) {
     const region   = summoner?.region ?? 'LAN';
     let taskId;
     try {
-        const res = await fetch('/api/tasks/heatmap', {
+        const r = await fetch('/api/tasks/heatmap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ riot_id: activeSummonerId, count: 20, region, force: !!force })
-        }).then(r => r.json());
+            body: JSON.stringify({ riot_id: activeSummonerId, count: 20, region, force: !!force, map_id })
+        });
+        const res = await r.json();
+        if (!r.ok || !res.task_id) {
+            content.innerHTML = `<span class="text-yellow-400 text-xs">${res.error || 'Queue unavailable, please retry'}</span>`;
+            btn.disabled = false; btn.style.animation = ''; return;
+        }
         taskId = res.task_id;
     } catch (e) {
         content.innerHTML = `<span class="text-red-400 text-xs">${e.message}</span>`;
@@ -1211,7 +1241,7 @@ async function runHeatmapAnalysis(force = false) {
         } else if (r.status === 'SUCCESS') {
             clearInterval(heatmapPollTimer); heatmapPollTimer = null;
             btn.disabled = false; btn.style.animation = '';
-            heatmapCache[activeSummonerId] = r.result;
+            heatmapCache[cacheKey] = r.result;
             renderHeatmapResult(r.result);
         } else if (r.status === 'FAILURE') {
             clearInterval(heatmapPollTimer); heatmapPollTimer = null;
@@ -1221,7 +1251,7 @@ async function runHeatmapAnalysis(force = false) {
     }, 2500);
 }
 
-function renderHeatmapResult(result) {
+function renderHeatmapResult(result, computedAt = null) {
     const content = document.getElementById('heatmap-content');
     const meta    = document.getElementById('heatmap-meta');
 
@@ -1236,7 +1266,7 @@ function renderHeatmapResult(result) {
         return;
     }
 
-    if (meta) meta.textContent = `${result.matches_analyzed} games \u00b7 ${positions.length} frames \u00b7 Summoner\u2019s Rift`;
+    if (meta) meta.innerHTML = `${result.matches_analyzed} games \u00b7 ${positions.length} frames \u00b7 ${result.map_id === 12 ? 'Howling Abyss' : 'Summoner\u2019s Rift'}${computedAt ? ` \u00b7 <span class="text-slate-600" title="${computedAt}">${timeAgo(new Date(computedAt))}</span>` : ''}`;
 
     // Size canvas to fill container width (square)
     const containerW = content.clientWidth || 400;
@@ -1309,7 +1339,7 @@ function renderHeatmapResult(result) {
         ctx.fillRect(0, 0, S, S);
         drawHeat();
     };
-    mapImg.src = `${DD}/img/map/map11.png`;
+    mapImg.src = `${DD}/img/map/map${result.map_id || 11}.png`;
 
     // Render per-minute metrics if available
     if (result.metrics) {
@@ -1331,18 +1361,33 @@ function renderTimelineMetrics(metrics, matchCount) {
         return;
     }
 
+    // Sanitize: replace undefined/NaN with null so Chart.js renders clean gaps
+    const _clean = arr => (arr || []).map(v => (v === undefined || v === null || Number.isNaN(v)) ? null : v);
+    // Align all series to the same length (shortest wins) to avoid tooltip payload errors
+    const _gold   = _clean(metrics.gold_per_min);
+    const _damage = _clean(metrics.damage_per_min);
+    const _cs     = _clean(metrics.cs_per_min);
+    const minLen  = Math.min(_gold.length, _damage.length, _cs.length);
+    const safeGold   = _gold.slice(0, minLen);
+    const safeDamage = _damage.slice(0, minLen);
+    const safeCS     = _cs.slice(0, minLen);
+    if (!minLen) { container.classList.add('hidden'); return; }
+
     container.classList.remove('hidden');
 
     const metaEl = document.getElementById('timeline-meta');
     if (metaEl) metaEl.textContent = `(avg of ${matchCount} games)`;
 
-    container.innerHTML = TimelineChartsContainer();
-
+    // Destroy BEFORE replacing innerHTML — Chart.js needs the canvas in the DOM
+    // to unbind event listeners cleanly. Destroying after innerHTML swap leaves
+    // dangling references that crash the next chart's tooltip handler.
     if (chartGoldPM)   { chartGoldPM.destroy();   chartGoldPM   = null; }
     if (chartDamagePM) { chartDamagePM.destroy(); chartDamagePM = null; }
     if (chartCSPM)     { chartCSPM.destroy();     chartCSPM     = null; }
 
-    const labels = metrics.gold_per_min.map((_, i) => `${i}m`);
+    container.innerHTML = TimelineChartsContainer();
+
+    const labels = safeGold.map((_, i) => `${i}m`);
 
     const baseOpts = {
         responsive: true,
@@ -1388,10 +1433,21 @@ function renderTimelineMetrics(metrics, matchCount) {
                     pointRadius: 0,
                     pointHoverRadius: 4,
                     borderWidth: 2,
+                    spanGaps: true,
                 }],
             },
             options: {
                 ...baseOpts,
+                plugins: {
+                    ...baseOpts.plugins,
+                    tooltip: {
+                        ...baseOpts.plugins.tooltip,
+                        // Skip null/gap data points — prevents Chart.js internal
+                        // 'Cannot read properties of undefined (reading payload)'
+                        // when spanGaps:true leaves holes in the series
+                        filter: item => item.raw !== null && item.raw !== undefined,
+                    },
+                },
                 scales: {
                     ...baseOpts.scales,
                     y: {
@@ -1406,9 +1462,9 @@ function renderTimelineMetrics(metrics, matchCount) {
         });
     }
 
-    chartGoldPM   = _makeLineChart('chart-gold-pm',   metrics.gold_per_min,   '#fbbf24', 'Gold/min');
-    chartDamagePM = _makeLineChart('chart-damage-pm', metrics.damage_per_min, '#f87171', 'Damage/min');
-    chartCSPM     = _makeLineChart('chart-cs-pm',     metrics.cs_per_min,     '#34d399', 'CS/min');
+    chartGoldPM   = _makeLineChart('chart-gold-pm',   safeGold,   '#fbbf24', 'Gold/min');
+    chartDamagePM = _makeLineChart('chart-damage-pm', safeDamage, '#f87171', 'Damage/min');
+    chartCSPM     = _makeLineChart('chart-cs-pm',     safeCS,     '#34d399', 'CS/min');
 }
 
 /* ═══════════════════════════════════════════════════════════════════

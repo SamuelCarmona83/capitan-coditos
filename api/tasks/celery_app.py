@@ -33,6 +33,12 @@ celery_app.conf.update(
     task_track_started=True,
     result_expires=3600,          # results kept 1 h
     broker_connection_retry_on_startup=True,
+    worker_prefetch_multiplier=1,  # don't pre-claim tasks; lets interactive tasks run immediately
+    task_acks_late=True,           # ack only after completion so crashed tasks re-queue
+    broker_transport_options={
+        "socket_timeout": 30,
+        "socket_connect_timeout": 30,
+    },
     # Beat schedule for the prefetch worker
     beat_schedule={
         "prefetch-matches": {
@@ -45,7 +51,7 @@ celery_app.conf.update(
         },
         "precache-analysis": {
             "task": "tasks.precache_analysis.precache_analysis",
-            "schedule": crontab(hour=3, minute=30),
+            "schedule": crontab(hour=3, minute=30, day_of_week=0),  # weekly, Sundays 03:30
         },
         "backfill-timelines": {
             "task": "tasks.backfill_timelines.backfill_timelines",

@@ -15,15 +15,17 @@ def _ensure_connections():
 
 
 @celery_app.task(bind=True, name="tasks.heatmap.run_heatmap_task", max_retries=0)
-def run_heatmap_task(self: Task, riot_id: str, count: int, region: str):
+def run_heatmap_task(self: Task, riot_id: str, count: int, region: str, map_id: int = 11):
     _ensure_connections()
 
     async def _run():
         from services.riot_api import get_position_heatmap_data
         from database.match_cache import get_analysis_cache, set_analysis_cache
 
+        cache_type = "heatmap_aram" if map_id == 12 else "heatmap"
+
         # Check server-side cache first
-        cached = get_analysis_cache(riot_id, "heatmap")
+        cached = get_analysis_cache(riot_id, cache_type)
         if cached:
             return cached
 
@@ -32,7 +34,7 @@ def run_heatmap_task(self: Task, riot_id: str, count: int, region: str):
 
         try:
             positions, matches_analyzed, total_frames, metrics, _ = await get_position_heatmap_data(
-                riot_id, count=count, progress_callback=progress_callback, region=region
+                riot_id, count=count, progress_callback=progress_callback, region=region, map_id=map_id
             )
         except ValueError as e:
             return {"error": str(e), "riot_id": riot_id}
@@ -46,10 +48,11 @@ def run_heatmap_task(self: Task, riot_id: str, count: int, region: str):
             "matches_analyzed": matches_analyzed,
             "total_frames": total_frames,
             "metrics": metrics,
+            "map_id": map_id,
         }
 
         # Cache successful results
-        set_analysis_cache(riot_id, "heatmap", result)
+        set_analysis_cache(riot_id, cache_type, result)
 
         return result
 

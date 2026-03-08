@@ -28,6 +28,8 @@ _CHAMPION_SPECIAL_CASES = {
 _GAME_MODE_LABELS = {
     "CLASSIC": "Grieta del Invocador",
     "ARAM": "ARAM",
+    "ARAM_MAYHEM": "ARAM Caos",
+    "ODIN": "ARAM",
     "URF": "Ultra Rapid Fire",
     "CHERRY": "Arena de Noxus",
     "ULTBOOK": "Libro de Hechizos",
@@ -134,7 +136,7 @@ def build_match_history_embed(api_response: dict) -> discord.Embed:
     wr = (total_wins / len(matches)) * 100 if matches else 0
     avg_kda = (total_k + total_a) / max(1, total_d)
 
-    mode_map = {"CLASSIC": "Grieta", "ARAM": "ARAM", "URF": "URF", "CHERRY": "Arena"}
+    mode_map = {"CLASSIC": "Grieta", "ARAM": "ARAM", "ARAM_MAYHEM": "ARAM Caos", "ODIN": "ARAM", "URF": "URF", "CHERRY": "Arena", "ULTBOOK": "Libro de Hechizos"}
     summaries = []
     for i, m in enumerate(matches):
         p = m["participant"]

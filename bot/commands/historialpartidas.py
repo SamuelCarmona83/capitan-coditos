@@ -24,7 +24,7 @@ class MatchHistoryView(discord.ui.View):
         self.matches = matches
         self.region = region
 
-        for i, m in enumerate(matches[:5]):
+        for i, m in enumerate(matches[:10]):
             p = m["participant"]
             emoji = "🏆" if p["win"] else "💔"
             btn = discord.ui.Button(
@@ -61,7 +61,7 @@ async def historial_partidas(interaction: discord.Interaction, riot_id: str, reg
     try:
         data = await api_client.get(
             f"/api/summoner/{riot_id}/match-history",
-            params={"region": region, "count": 5},
+            params={"region": region, "count": 10},
         )
         embed = build_match_history_embed(data)
         view = MatchHistoryView(riot_id, data.get("matches", []), region)
@@ -74,6 +74,6 @@ def register_historialpartidas(tree):
     @app_commands.describe(riot_id="Riot ID (ej: Roga#LAN)", region="Región (default: LAN)")
     @app_commands.choices(region=REGION_CHOICES)
     @app_commands.autocomplete(riot_id=riot_id_autocomplete)
-    @tree.command(name="historialpartidas", description="Historial de las últimas 5 partidas 📋")
+    @tree.command(name="historialpartidas", description="Historial de las últimas 10 partidas 📋")
     async def command(interaction: discord.Interaction, riot_id: str, region: str = "LAN"):
         await historial_partidas(interaction, riot_id, region)

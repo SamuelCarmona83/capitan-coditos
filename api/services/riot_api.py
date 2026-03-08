@@ -657,14 +657,16 @@ async def get_game_duration_stats(riot_id: str, count: int = 50,
 # ---------------------------------------------------------------------------
 
 async def get_position_heatmap_data(
-    riot_id: str, count: int = 20, progress_callback=None, region: str = None
+    riot_id: str, count: int = 20, progress_callback=None, region: str = None,
+    map_id: int = 11,
 ):
     """Fetch position data + per-minute metrics across multiple matches.
 
     Returns (positions, matches_analyzed, total_frames, metrics, summoner_profile).
     ``positions`` is a flat list of [x, y] pairs (game coordinates 0–14820).
     ``metrics`` contains gold/damage/cs cumulative and per-minute rate averages.
-    Only Summoner's Rift (mapId 11) games with duration ≥ 5 min are included.
+    ``map_id`` controls which map to analyze: 11 = Summoner's Rift, 12 = Howling Abyss (ARAM).
+    Only games on the specified map with duration ≥ 5 min are included.
     """
     puuid, summoner_profile = await _resolve_summoner(riot_id, region)
 
@@ -710,8 +712,8 @@ async def get_position_heatmap_data(
                 continue
 
             info = match_data.get("info", {})
-            if info.get("mapId") != 11:
-                continue  # Skip non-Summoner's Rift
+            if info.get("mapId") != map_id:
+                continue  # Skip games not on the requested map
             if info.get("gameDuration", 0) < 300:
                 continue  # Skip remakes (< 5 min)
 

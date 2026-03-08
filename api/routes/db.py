@@ -166,13 +166,17 @@ def analysis_cache():
     """
     riot_id = request.args.get("riot_id")
     atype = request.args.get("type")
-    if not riot_id or atype not in ("duration", "heatmap"):
-        return jsonify({"error": "riot_id and type (duration|heatmap) required"}), 400
+    if not riot_id or atype not in ("duration", "heatmap", "heatmap_aram"):
+        return jsonify({"error": "riot_id and type (duration|heatmap|heatmap_aram) required"}), 400
 
-    from database.match_cache import get_analysis_cache
+    from database.match_cache import get_analysis_cache, get_analysis_mongo
     cached = get_analysis_cache(riot_id, atype)
     if cached:
-        return jsonify({"cached": True, "result": cached})
+        computed_at = None
+        entry = get_analysis_mongo(riot_id, atype)
+        if entry and entry.get("computed_at"):
+            computed_at = entry["computed_at"].isoformat()
+        return jsonify({"cached": True, "result": cached, "computed_at": computed_at})
     return jsonify({"cached": False})
 
 
@@ -190,11 +194,17 @@ def summoner_rank():
 
     cache_key = f"rank:{riot_id}"
     if not force:
-        cached = _redis().get(cache_key)
+        try:
+            cached = _redis().get(cache_key)
+        except Exception:
+            cached = None
         if cached:
             return jsonify({"riot_id": riot_id, "entries": json.loads(cached)})
     else:
-        _redis().delete(cache_key)
+        try:
+            _redis().delete(cache_key)
+        except Exception:
+            pass
 
     profile = get_summoner_profile(riot_id)
     puuid = (profile or {}).get("puuid")
@@ -337,7 +347,10 @@ def sync_progress():
     """Returns current sync task progress stored in Redis."""
     import json
     from database.match_cache import _redis
-    raw = _redis().get("sync:progress")
+    try:
+        raw = _redis().get("sync:progress")
+    except Exception:
+        raw = None
     if not raw:
         return jsonify({"status": "idle"})
     return jsonify(json.loads(raw))

@@ -84,7 +84,7 @@ def match_history(riot_id: str):
     Query params: region (default LAN), count (default 5)
     """
     region = request.args.get("region", "LAN")
-    count = min(int(request.args.get("count", 5)), 20)
+    count = min(int(request.args.get("count", 10)), 20)
 
     try:
         save_summoner(riot_id, region=region)

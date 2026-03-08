@@ -180,6 +180,8 @@ def get_game_mode_label(game_mode: str) -> str:
     mapping = {
         "CLASSIC": "Grieta del Invocador",
         "ARAM": "ARAM",
+        "ARAM_MAYHEM": "ARAM Caos",
+        "ODIN": "ARAM",
         "URF": "Ultra Rapid Fire",
         "CHERRY": "Arena de Noxus",
         "ULTBOOK": "Libro de Hechizos",
