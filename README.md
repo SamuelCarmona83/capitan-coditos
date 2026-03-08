@@ -2,293 +2,272 @@
 
 A Discord bot that provides League of Legends match analysis using the Riot API and OpenAI for entertaining match summaries.
 
-## Features
-
-- 📊 **Last Match Analysis** (`/ultimapartida`) - Get your latest LoL match stats with AI-powered commentary
-- 🔍 **Team Analysis** (`/analizarpartida`) - Analyze your team's performance and find the worst performer with humor
-- 🤖 **AI-Powered Commentary** - Sarcastic and brutally honest match analysis using OpenAI
-- 🎮 **Riot ID Support** - Works with new Riot ID format (Name#Tag)
+Built on a microservices architecture: a **Flask REST API** handles all data fetching and processing, a **Discord bot** acts as a thin client, and **Celery** workers run heavy tasks in the background. Match data is cached in **MongoDB** and **Redis** to minimize Riot API calls.
 
 ## 🎨 Teaser Images
-
-Here are some teaser images showcasing the bot's functionality:
 
 ![Teaser Image 1](./app/assets/image.png)
 
 ![Teaser Image 2](./app/assets/image%20copy.png)
 
-## 🐳 Docker Hub
+---
 
-### Quick Start with Docker
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Docker Network                      │
+│                                                         │
+│  ┌──────────┐   HTTP    ┌────────────────────────────┐  │
+│  │  Discord │ ────────► │     Flask API (api/)       │  │
+│  │  Bot     │           │  Routes / Services / DB    │  │
+│  │  (bot/)  │           └──────────┬─────────────────┘  │
+│  └──────────┘                      │                    │
+│                           ┌────────┴────────┐           │
+│                     ┌─────▼─────┐   ┌───────▼──────┐   │
+│                     │  MongoDB  │   │    Redis     │   │
+│                     │  (data)   │   │ (cache+queue)│   │
+│                     └───────────┘   └──────┬───────┘   │
+│                                            │            │
+│                               ┌────────────▼──────────┐ │
+│                               │   Celery Workers      │ │
+│                               │ (worker + beat)       │ │
+│                               └───────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Services
+
+| Container | Image | Role |
+|---|---|---|
+| `capitan-api` | `./api` | Flask REST API + Gunicorn (port 5000) |
+| `capitan-celery-worker` | `./api` | Celery task worker (concurrency=2) |
+| `capitan-celery-beat` | `./api` | Celery periodic task scheduler |
+| `capitan-coditos` | `./bot` | Discord bot (thin HTTP client) |
+| `capitan-mongo` | `mongo:7` | Match data & summoner profiles |
+| `capitan-redis` | `redis:7-alpine` | L1 cache + Celery broker/backend |
+
+---
+
+## 🌐 Web Dashboard
+
+The API exposes a single-page web dashboard at `http://localhost:5001/` (or your server IP on port 5001 in production).
+
+It is a **vanilla JS + Tailwind CDN** app — no build step required. The UI is split across four static files loaded in dependency order:
+
+| File | Responsibility |
+|---|---|
+| `static/js/constants.js` | Global constants (`DD`, `TIER_COLOR`, queue maps) and pure formatting helpers |
+| `static/js/components.js` | Pure component functions returning HTML strings (`StatsRow`, `MatchCard`, `TeamTable`, skeletons…) |
+| `static/js/mobile.js` | Mobile-first panel navigation (`setMobilePanel`, `isMobile`) |
+| `static/js/app.js` | App state, all render/API functions, event wiring, and bootstrap calls |
+
+Features:
+- Summoner list with region editing and search
+- Match history timeline (ranked / normal / ARAM filter tabs)
+- Per-summoner profile: champion grid, win-rate doughnut chart, rank badge
+- **Win Rate con Amigos** — in-profile section showing W/L and win-rate vs each friend who played on the same team
+- Match detail view: team tables with damage/gold bars and AI analysis
+- Duration distribution chart (Chart.js bar + line combo, powered by Celery task)
+- Animated champion splash background and live sync progress bar
+- Fully responsive — works on desktop and mobile
+
+> **Cache-busting:** The four `<script>` tags in `api/templates/index.html` carry a `?v=N` suffix (currently `v=4`). Increment `N` whenever a `.js` file changes, then rebuild the API container so browsers fetch the latest code.
+
+---
+
+## 📁 Project Structure
+
+```
+capitan-coditos/
+├── api/                        # Flask REST API
+│   ├── app.py                  # Application factory
+│   ├── config.py               # Environment config
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── database/
+│   │   ├── match_cache.py      # Redis + MongoDB cache-aside layer
+│   │   └── summoners.py        # Summoner registry (MongoDB)
+│   ├── routes/
+│   │   ├── ai.py               # POST /api/ai/analyze
+│   │   ├── db.py               # GET  /api/db/summoners/*
+│   │   ├── summoner.py         # GET  /api/summoner/*
+│   │   └── tasks.py            # POST /api/tasks/* (enqueue + poll)
+│   ├── services/
+│   │   └── riot_api.py         # Riot API wrappers + match logic
+│   ├── static/
+│   │   └── js/
+│   │       ├── constants.js    # Data constants + formatting utilities (DD, TIER_COLOR, fmtDuration…)
+│   │       ├── components.js   # Pure UI component functions + skeleton helpers
+│   │       ├── mobile.js       # Mobile panel navigation (setMobilePanel)
+│   │       └── app.js          # App state, render logic, API calls, event wiring
+│   ├── tasks/
+│   │   ├── celery_app.py       # Celery configuration
+│   │   ├── duration_stats.py   # Game duration breakdown task
+│   │   ├── matchups.py         # Champion matchup analysis task
+│   │   ├── prefetch.py         # Background match prefetch task
+│   │   └── worst_games.py      # Worst games analysis task
+│   └── templates/
+│       └── index.html          # Web dashboard shell (loads static JS files)
+│
+├── bot/                        # Discord bot (thin client)
+│   ├── bot.py                  # Bot entry point
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── commands/
+│   │   ├── analizarpartida.py  # /analizarpartida
+│   │   ├── dbstats.py          # /dbstats
+│   │   ├── duracionpartidas.py # /duracionpartidas
+│   │   ├── historialpartidas.py# /historialpartidas
+│   │   ├── matchups.py         # /matchups
+│   │   ├── ultimapartida.py    # /ultimapartida
+│   │   └── worstgames.py       # /worstgames
+│   ├── riot/
+│   │   └── active_game_notify.py # Periodic in-game detection
+│   └── utils/
+│       ├── api_client.py       # aiohttp client + task polling
+│       ├── autocomplete.py     # Slash command autocomplete
+│       └── embed_builders.py   # Discord embed helpers
+│
+├── app/                        # Legacy monolith (reference only)
+├── scripts/                    # Utility scripts
+│   └── etl_postgres_to_mongo.py# One-time Postgres → MongoDB migration
+├── docker-compose.prod.yml     # Production stack
+├── docker-compose.yml          # Development stack
+└── .env                        # Environment variables
+```
+
+---
+
+## 🎮 Commands
+
+| Command | Description |
+|---|---|
+| `/ultimapartida` | Last match stats with AI-powered commentary |
+| `/analizarpartida` | Team analysis — finds and roasts the worst performer |
+| `/historialpartidas` | Match history with KDA, damage, and win/loss |
+| `/matchups` | Champion matchup breakdown by role/lane |
+| `/worstgames` | Worst-performing games ranked by KDA and damage |
+| `/duracionpartidas` | Game duration distribution across configurable buckets |
+| `/dbstats` | Internal DB stats (summoner count, cached matches) |
+
+---
+
+## 🚀 Deployment
+
+### Prerequisites
+
+- Docker & Docker Compose
+- A `.env` file with all required variables (see below)
+
+### Start the stack
 
 ```bash
-# Pull the image from Docker Hub
-docker pull samuelc595/capitan-coditos:latest
+# Clone the repo
+git clone https://github.com/SamuelCarmona83/capitan-coditos.git
+cd capitan-coditos
 
-# Run with environment variables
-docker run -d \
-  --name capitan-coditos \
-  --restart unless-stopped \
-  -e DISCORD_TOKEN="your_discord_bot_token" \
-  -e RIOT_API_KEY="your_riot_api_key" \
-  -e OPENAI_API_KEY="your_openai_api_key" \
-  samuelc595/capitan-coditos:latest
+# Create .env from example and fill in your keys
+cp .env.example .env
+
+# Build and start all services
+docker compose -f docker-compose.prod.yml up -d --build
+
+# Verify everything is running
+docker compose -f docker-compose.prod.yml ps
 ```
 
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DISCORD_TOKEN` | Your Discord bot token from Discord Developer Portal | ✅ |
-| `RIOT_API_KEY` | Your Riot Games API key from Riot Developer Portal | ✅ |
-| `OPENAI_API_KEY` | Your OpenAI API key for AI commentary | ✅ |
-
-## 🚀 Deployment Options
-
-### Option 1: Docker Run
+### Update after a code change
 
 ```bash
-docker run -d \
-  --name capitan-coditos \
-  --restart unless-stopped \
-  -e DISCORD_TOKEN="YOUR_DISCORD_TOKEN_HERE" \
-  -e RIOT_API_KEY="YOUR_RIOT_API_KEY_HERE" \
-  -e OPENAI_API_KEY="YOUR_OPENAI_API_KEY_HERE" \
-  samuelc595/capitan-coditos:latest
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-### Option 2: Docker Compose
+### View logs
 
-Create a `docker-compose.yml` file:
+```bash
+# All services
+docker compose -f docker-compose.prod.yml logs -f
 
-```yaml
-version: '3.8'
-
-services:
-  capitan-coditos:
-    image: samuelc595/capitan-coditos:latest
-    container_name: capitan-coditos
-    restart: unless-stopped
-    environment:
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - RIOT_API_KEY=${RIOT_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    # Optional: if you want to persist logs
-    volumes:
-      - ./logs:/app/logs
+# Specific service
+docker logs -f capitan-api
+docker logs -f capitan-coditos
+docker logs -f capitan-celery-worker
 ```
 
-Create a `.env` file:
+---
+
+## ⚙️ Environment Variables
+
+Create a `.env` file in the project root:
 
 ```env
-DISCORD_TOKEN=your_discord_bot_token_here
-RIOT_API_KEY=your_riot_api_key_here
-OPENAI_API_KEY=your_openai_api_key_here
+# Discord
+DISCORD_TOKEN=your_discord_bot_token
+
+# Riot Games
+RIOT_API_KEY=your_riot_api_key
+
+# OpenAI
+OPENAI_API_KEY=your_openai_api_key
+
+# MongoDB
+MONGO_URL=mongodb://mongo:27017
+MONGO_DB=capitancoditos
+
+# Redis
+REDIS_URL=redis://redis:6379/0
 ```
 
-Then run:
+| Variable | Description | Required |
+|---|---|---|
+| `DISCORD_TOKEN` | Discord bot token | ✅ |
+| `RIOT_API_KEY` | Riot Games API key | ✅ |
+| `OPENAI_API_KEY` | OpenAI API key for AI commentary | ✅ |
+| `MONGO_URL` | MongoDB connection string | ✅ |
+| `MONGO_DB` | MongoDB database name | ✅ |
+| `REDIS_URL` | Redis connection string | ✅ |
 
-```bash
-docker-compose up -d
-```
-
-### Option 3: Local Development
-
-```bash
-# Clone the repository
-git clone https://github.com/samuelc595/discbot.git
-cd discbot
-
-# Build the image
-docker build -t capitan-coditos .
-
-# Run with environment file
-docker run -d --env-file .env capitan-coditos
-```
-
-## 🎮 Bot Commands
-
-### `/ultimapartida <riot_id>`
-
-Analyzes your last League of Legends match with AI commentary.
-
-**Example:**
-```
-/ultimapartida Roga#LAN
-```
-
-**Response:**
-```
-**Roga#LAN** jugó como **Jinx**
-🎯 KDA: 12/3/8 | 🎮 Victoria | 🕒 31 minutos
-
-**¡Finalmente alguien que sabe usar un mouse!** Tu KDA de `12/3/8` con `45,231` de daño en 31 minutos demuestra que no todos los días hay que jugar *Candy Crush*. 🎯
-```
-
-### `/analizarpartida <riot_id>`
-
-Analyzes your team's performance and roasts the worst performer.
-
-**Example:**
-```
-/analizarpartida Roga#LAN
-```
-
-**Response:**
-```
-🏆 **Victoria** - ⏱️ 31 min
-**Equipo de Roga#LAN:**
-• **Roga** - Jinx (`12/3/8`)
-• **Player2** - Yasuo (`2/8/4`)
-• **Player3** - Thresh (`1/5/12`)
-• **Player4** - Graves (`8/4/6`)
-• **Player5** - Orianna (`6/2/9`)
-
-**Player2**, con tu impresionante `2/8/4` como *Yasuo*, has demostrado que el daño de `8,432` en 31 minutos es perfecto para... __¿tal vez probar *Minecraft*?__ ~~Ese 0.75 KDA~~ grita "modo espectador activado". 🎮
-```
+---
 
 ## 🔧 Setup Requirements
 
-### Discord Bot Setup
+### Discord Bot
 
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a new application
-3. Go to "Bot" section and create a bot
-4. Copy the bot token
-5. Enable necessary intents (Message Content Intent if needed)
-6. Invite bot to your server with appropriate permissions
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a new application → Bot → copy the token
+3. Enable **Server Members Intent** and **Message Content Intent**
+4. Invite the bot to your server with `applications.commands` and `bot` scopes
 
 ### Riot API Key
 
-1. Visit [Riot Developer Portal](https://developer.riotgames.com/)
-2. Sign in with your Riot account
-3. Generate a personal API key
-4. For production, apply for a production API key
+1. Visit the [Riot Developer Portal](https://developer.riotgames.com/)
+2. Generate a personal API key (or apply for a production key for long-term use)
 
 ### OpenAI API Key
 
-1. Visit [OpenAI Platform](https://platform.openai.com/)
-2. Create an account or sign in
-3. Go to API Keys section
-4. Create a new API key
+1. Visit [OpenAI Platform](https://platform.openai.com/api-keys)
+2. Create a new secret key
 
-## 🛠️ Development
-
-### Local Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/samuelc595/discbot.git
-cd discbot
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env file with your credentials
-cp .env.example .env
-# Edit .env with your API keys
-
-# Run the bot
-python bot.py
-```
-
-### Building Custom Image
-
-```bash
-# Build the image
-docker build -t samuelc595/capitan-coditos:latest .
-
-# Test locally
-docker run --env-file .env samuelc595/capitan-coditos:latest
-
-# Push to Docker Hub
-docker push samuelc595/capitan-coditos:latest
-```
-
-## 📝 Container Management
-
-### View Logs
-
-```bash
-# View container logs
-docker logs discbot
-
-# Follow logs in real-time
-docker logs -f discbot
-```
-
-### Update Bot
-
-```bash
-# Pull latest image
-docker pull YOUR_USERNAME/discbot:latest
-
-# Stop and remove old container
-docker stop discbot
-docker rm discbot
-
-# Run new container
-docker run -d \
-  --name discbot \
-  --restart unless-stopped \
-  --env-file .env \
-  YOUR_USERNAME/discbot:latest
-```
-
-### Health Check
-
-```bash
-# Check if container is running
-docker ps | grep discbot
-
-# Check container resource usage
-docker stats discbot
-```
+---
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+| Problem | Solution |
+|---|---|
+| Bot is offline | `docker logs capitan-coditos` — check token and API connectivity |
+| Commands not appearing in Discord | Wait ~1 hour for global slash command propagation, or use guild commands |
+| Riot API 404 errors | Summoner region may be missing — run any command with the correct region to auto-store it |
+| Task stuck in PENDING | `docker logs capitan-celery-worker` — verify worker connected to Redis |
+| Port 5000 busy on macOS | macOS AirPlay uses 5000; prod compose maps host port 5001→5000 |
 
-1. **Bot not responding**: Check if the Discord token is correct and the bot is invited to the server
-2. **Riot API errors**: Verify your Riot API key is valid and not rate-limited
-3. **OpenAI errors**: Check your OpenAI API key and account balance
-4. **Container crashes**: Check logs with `docker logs discbot`
-
-### Debug Mode
-
-To run with more verbose logging:
-
-```bash
-docker run -d \
-  --name discbot \
-  --restart unless-stopped \
-  --env-file .env \
-  -e PYTHONUNBUFFERED=1 \
-  YOUR_USERNAME/discbot:latest
-```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with Docker
-5. Submit a pull request
+---
 
 ## 🔗 Links
 
 - [Discord Developer Portal](https://discord.com/developers/applications)
 - [Riot Developer Portal](https://developer.riotgames.com/)
 - [OpenAI Platform](https://platform.openai.com/)
-- [Docker Hub Repository](https://hub.docker.com/r/samuelc595/capitan-coditos)
 
 ---
 

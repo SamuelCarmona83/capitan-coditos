@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capitán Coditos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <style>
+        html,
+        body {
+            overflow: hidden;
+            height: 100%;
+        }
+
+        #summoner-list {
+            scrollbar-width: thin;
+            scrollbar-color: #475569 transparent;
+        }
+
+        #summoner-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #summoner-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #summoner-list::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 2px;
+        }
+
+        #match-history {
+            scrollbar-width: thin;
+            scrollbar-color: #475569 transparent;
+        }
+        #match-history::-webkit-scrollbar { width: 4px; }
+        #match-history::-webkit-scrollbar-track { background: transparent; }
+        #match-history::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+
+        @keyframes shimmer {
+            0% { background-position: -400px 0 }
+            100% { background-position: 400px 0 }
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .skeleton {
+            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+            background-size: 800px 100%;
+            animation: shimmer 1.4s infinite linear;
+            border-radius: 4px;
+        }
+
+        /* ── Mobile responsive ──────────────────────────────────── */
+        .mobile-hidden { display: none !important; }
+        @media (max-width: 639px) {
+            /* Each panel takes the full viewport and stacks — JS shows one at a time */
+            #summoner-sidebar, #splash, #detail-panel {
+                position: absolute;
+                inset: 0;
+                width: 100% !important;
+                max-width: 100% !important;
+                border-right: none !important;
+                z-index: 1;
+            }
+            #profile-header { height: 160px !important; }
+            #detail-panel  { overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 80px !important; }
+            #summoner-list { padding-bottom: 60px; }
+        }
+    </style>
+</head>
+
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col select-none">
+
+    <footer
+    <footer class="fixed bottom-0 inset-x-0 z-40 bg-slate-900/90 backdrop-blur border-t border-slate-700/50 px-6 pointer-events-none">
+        <!-- Progress bar (hidden when idle) -->
+        <div id="sync-progress-bar-wrap" class="hidden w-full h-0.5 bg-slate-700 rounded overflow-hidden">
+            <div id="sync-progress-bar" class="h-full bg-violet-500 transition-all duration-500" style="width:0%"></div>
+        </div>
+        <div class="flex items-center justify-between py-1.5 text-xs text-slate-500">
+            <span>Capitán Coditos &mdash; League of Legends match tracker</span>
+            <span id="footer-status">Ready</span>
+        </div>
+    </footer>
+
+    <header class="bg-slate-800 border-b border-slate-700 px-6 py-3 shrink-0 flex items-center justify-between">
+        <span class="font-bold">Capitán Coditos</span>
+        <button onclick="openModal()"
+            class="flex items-center gap-1.5 px-3 py-1.5 bg-violet-700 hover:bg-violet-600 rounded text-sm font-medium transition-colors">
+            <span>＋</span> Add summoner
+        </button>
+    </header>
+
+    <!-- Add summoner modal -->
+    <div id="modal-backdrop" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
+        onclick="closeModal(event)">
+        <div class="bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm mx-4 p-5" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="font-semibold text-base">Add</h2>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+            </div>
+
+            <label class="block text-xs text-slate-400 mb-1">Riot ID <span
+                    class="text-slate-500">(Name#TAG)</span></label>
+            <div class="relative mb-3">
+                <input id="modal-input" type="text" placeholder="Roga#LAN" autocomplete="off" spellcheck="false"
+                    class="w-full bg-slate-700 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-violet-500 placeholder-slate-500">
+                <ul id="modal-autocomplete"
+                    class="hidden absolute top-full left-0 right-0 bg-slate-700 rounded-b shadow-lg z-10 max-h-36 overflow-y-auto">
+                </ul>
+            </div>
+
+            <label class="block text-xs text-slate-400 mb-1">Region</label>
+            <select id="modal-region"
+                class="w-full bg-slate-700 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-violet-500 mb-4">
+                <option>LAN</option>
+                <option>LAS</option>
+                <option>NA</option>
+                <option>BR</option>
+                <option>EUW</option>
+                <option>EUNE</option>
+                <option>TR</option>
+                <option>RU</option>
+                <option>KR</option>
+                <option>JP</option>
+                <option>OCE</option>
+            </select>
+
+            <div id="modal-status" class="text-xs text-slate-400 mb-3 min-h-[1rem]"></div>
+
+            <button id="modal-submit-btn" onclick="submitModal()"
+                class="w-full bg-violet-700 hover:bg-violet-600 rounded py-2 text-sm font-medium transition-colors disabled:opacity-50">
+                Load matches
+            </button>
+        </div>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden relative" style="height:calc(100vh - 49px)">
+
+        <!-- Summoner sidebar -->
+        <aside id="summoner-sidebar" class="w-48 shrink-0 bg-slate-800 border-r border-slate-700 flex flex-col overflow-hidden">
+            <div class="p-2 border-b border-slate-700 shrink-0">
+                <input id="search" type="text" placeholder="Search…" autocomplete="off"
+                    class="w-full bg-slate-700 rounded px-2 py-1.5 text-sm outline-none placeholder-slate-400 focus:ring-1 focus:ring-violet-500">
+            </div>
+            <ul id="summoner-list" class="flex-1 overflow-y-scroll pb-8"></ul>
+        </aside>
+
+        <!-- No-summoner splash -->
+        <div id="splash" class="flex-1 overflow-hidden relative flex flex-col items-center justify-center"
+            style="min-width:0">
+            <div class="absolute inset-0" style="overflow:hidden" id="splash-track"></div>
+            <div class="relative z-10 text-center pointer-events-none">
+                <div class="text-4xl font-black tracking-tight mb-1">Capitán Coditos</div>
+                <div class="text-slate-400">Select a summoner to view their stats</div>
+            </div>
+        </div>
+
+        <!-- Profile / Match detail (unified panel) -->
+        <div id="detail-panel" class="flex-1 overflow-y-auto hidden">
+
+            <!-- Compact strip shown when a match is open -->
+            <div id="profile-strip"
+                class="hidden flex items-center gap-3 bg-slate-800/80 backdrop-blur-sm border-b border-slate-700/50 px-4 py-2 text-sm sticky top-0 z-20">
+                <div id="strip-champs" class="flex gap-1"></div>
+                <div id="strip-name" class="font-semibold"></div>
+                <div id="strip-stats" class="text-slate-400 text-xs"></div>
+                <button onclick="closeMatch()"
+                    class="ml-auto text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-700 transition-colors flex items-center gap-1">
+                    <span>←</span> Back to profile</button>
+                <button onclick="_copyShareLink(event)" title="Copy share link"
+                    class="share-btn text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-700 transition-colors">
+                    🔗 Share</button>
+            </div>
+
+            <!-- Full profile view -->
+            <div id="profile-view" class="p-4 pb-8">
+                <!-- Profile header: splash + icon + name + rank -->
+                <div id="profile-header" class="relative rounded-xl overflow-hidden mb-4" style="height:260px;background:#1e293b">
+                    <div id="profile-splash-bg" class="absolute inset-0" style="background-size:cover;background-position:center 15%;filter:brightness(0.38) saturate(1.3);transition:opacity 0.5s ease"></div>
+                    <div class="absolute inset-0" style="background:linear-gradient(to top, rgba(15,23,42,0.95) 0%, rgba(15,23,42,0.3) 60%, transparent 100%)"></div>
+                    <div class="relative z-10 flex items-end gap-3 p-4 h-full">
+                        <img id="profile-icon" src="" class="w-16 h-16 rounded-lg border-2 border-slate-500 shrink-0 shadow-lg" onerror="this.style.display='none'">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-xl font-bold leading-tight truncate" id="profile-name"></div>
+                            <div class="text-xs text-slate-400 mt-0.5" id="profile-level"></div>
+                        </div>
+                        <div id="profile-rank-badge" class="shrink-0"></div>
+                    </div>
+                    <!-- Share + Close profile buttons -->
+                    <div class="absolute top-2 right-2 z-20 flex gap-1">
+                        <button onclick="_copyShareLink(event)" title="Copy share link"
+                            class="share-btn w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/60 hover:bg-slate-900/90 text-slate-400 hover:text-white transition-colors text-sm">
+                            🔗
+                        </button>
+                        <button onclick="closeProfile()" title="Close profile"
+                            class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-900/60 hover:bg-slate-900/90 text-slate-400 hover:text-white transition-colors text-sm">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Period filter bar -->
+                <div class="mb-3">
+                    <div class="flex flex-wrap gap-1 items-center">
+                        <button onclick="setPeriod('all')" data-period="all" class="period-btn px-2.5 py-1 rounded text-xs transition-colors bg-violet-700 text-white font-semibold">All time</button>
+                        <button onclick="setPeriod('S2026')" data-period="S2026" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">S2026</button>
+                        <button onclick="setPeriod('S2025')" data-period="S2025" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">S2025</button>
+                        <button onclick="setPeriod('S2024')" data-period="S2024" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">S2024</button>
+                        <button onclick="setPeriod('last90')" data-period="last90" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">90d</button>
+                        <button onclick="setPeriod('last30')" data-period="last30" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">30d</button>
+                        <button onclick="toggleCustomDate()" data-period="custom" class="period-btn px-2.5 py-1 rounded text-xs transition-colors text-slate-400 hover:text-white hover:bg-slate-700">Custom ▾</button>
+                        <span id="period-match-count" class="text-[10px] text-slate-500 ml-1"></span>
+                    </div>
+                    <div id="custom-date-range" class="hidden mt-2 flex items-center gap-2 flex-wrap">
+                        <input type="date" id="custom-from" class="bg-slate-700 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-violet-500">
+                        <span class="text-slate-500 text-xs">→</span>
+                        <input type="date" id="custom-to" class="bg-slate-700 rounded px-2 py-1 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-violet-500">
+                        <button onclick="applyCustomDate()" class="px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded text-xs text-white transition-colors">Aplicar</button>
+                    </div>
+                </div>
+
+                <!-- Mode tabs + Sync button -->
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex flex-wrap gap-1" id="mode-tabs"></div>
+                    <button id="sync-btn" onclick="syncSummoner()" title="Sync latest matches"
+                        class="hidden text-slate-400 hover:text-white transition-colors p-1.5 rounded hover:bg-slate-700 flex items-center gap-1.5 text-xs">
+                        <svg id="sync-icon" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10" />
+                            <polyline points="1 20 1 14 7 14" />
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                        </svg>
+                        <span>Sync</span>
+                    </button>
+                </div>
+
+                <!-- Stats row -->
+                <div id="stats-row" class="grid grid-cols-3 gap-3 mb-3"></div>
+
+                <!-- Friends win-rate section -->
+                <div id="companions-section" class="mb-3 hidden"></div>
+
+                <!-- Compact insight row: WR ring | Top champs | Duration win% -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                    <!-- WR ring -->
+                    <div class="bg-slate-800 rounded-lg p-3 flex flex-col items-center justify-center gap-1">
+                        <div style="height:96px;width:96px;position:relative">
+                            <canvas id="chart-winrate"></canvas>
+                            <div id="winrate-label"
+                                class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <span class="text-lg font-bold leading-none"></span>
+                                <span class="text-xs text-slate-500">WR</span>
+                            </div>
+                        </div>
+                        <div id="duration-avg" class="text-xs font-semibold text-slate-300">—</div>
+                        <div class="text-xs text-slate-600">avg duration</div>
+                    </div>
+                    <!-- Top champs compact -->
+                    <div class="bg-slate-800 rounded-lg p-3">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Top Champs</div>
+                        <div id="champ-grid" class="space-y-1.5"></div>
+                    </div>
+                    <!-- Duration win% chart (auto-loads) -->
+                    <div class="bg-slate-800 rounded-lg p-3 flex flex-col">
+                        <div class="flex items-center justify-between mb-1.5 shrink-0">
+                            <div class="text-xs text-slate-500 uppercase tracking-wider">⏱ Win% by Duration</div>
+                            <div id="duration-meta" class="flex gap-2 text-xs text-slate-500"></div>
+                            <button id="duration-btn" onclick="runDurationAnalysis(true)"
+                                class="text-xs text-violet-400 hover:text-violet-300 transition-colors ml-2">&#8635;</button>
+                        </div>
+                        <div id="duration-content" class="flex-1 relative overflow-hidden min-h-[160px] sm:min-h-0">
+                            <div class="absolute inset-0 flex items-center justify-center text-slate-600 text-xs">Loading…</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Position Heatmap + Per-Minute Metrics -->
+                <div class="bg-slate-800 rounded-lg p-4 mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <div class="text-xs text-slate-500 uppercase tracking-wider flex items-center gap-1.5">🗺️ Position Heatmap
+                                <span id="timeline-meta" class="text-slate-600 font-normal"></span>
+                            </div>
+                            <div id="heatmap-meta" class="text-xs text-slate-600 mt-0.5"></div>
+                        </div>
+                        <button id="heatmap-btn" onclick="runHeatmapAnalysis(true)"
+                            class="text-xs text-violet-400 hover:text-violet-300 transition-colors">&#8635;</button>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <!-- Left: minimap -->
+                        <div id="heatmap-content" class="flex items-center justify-center" style="min-height:120px">
+                            <span class="text-slate-600 text-xs">Select a summoner</span>
+                        </div>
+                        <!-- Right: per-minute charts -->
+                        <div id="timeline-content" class="hidden">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Match History (integrated into profile) -->
+                <div class="mt-2">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                            Match History
+                            <span id="match-count" class="text-slate-500 font-normal text-xs"></span>
+                        </h3>
+                    </div>
+                    <div id="match-history" class="bg-slate-800 rounded-lg overflow-hidden">
+                        <p class="p-4 text-slate-500 text-sm">Select a summoner.</p>
+                    </div>
+                </div>
+
+                <!-- Champion grid (hidden, replaced by compact list above) -->
+                <div id="champ-chart-row" class="hidden"></div>
+            </div>
+
+            <!-- Match detail, hidden by default -->
+            <div id="match-view" class="hidden p-4 pb-8">
+                <div id="match-content"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Item tooltip overlay -->
+    <div id="item-tooltip" class="hidden fixed z-[9999] pointer-events-none" style="top:0;left:0;max-width:280px">
+      <div class="bg-slate-900/95 border border-slate-600/60 rounded-lg p-3 shadow-2xl backdrop-blur-sm">
+        <div id="item-tooltip-name" class="font-bold text-yellow-300 text-sm mb-0.5"></div>
+        <div id="item-tooltip-cost" class="text-xs text-yellow-600/80 mb-2"></div>
+        <div id="item-tooltip-desc" class="text-xs text-slate-300 leading-relaxed whitespace-pre-line"></div>
+      </div>
+    </div>
+
+    <script src="/static/js/constants.js?v=18"></script>
+    <script src="/static/js/components.js?v=18"></script>
+    <script src="/static/js/mobile.js?v=18"></script>
+    <script src="/static/js/app.js?v=18"></script>
+</body>
+
+</html>

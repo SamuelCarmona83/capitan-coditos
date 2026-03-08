@@ -1,47 +1,131 @@
-version: '3.8'
-
 networks:
-  discbot-network:
+  app-network:
     driver: bridge
 
 services:
-  capitan-coditos:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: capitan-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - app-network
+    depends_on:
+      - api
+
+  api:
     build:
-      context: .
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: capitan-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "5001:5000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  celery-worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: capitan-celery-worker
+    command: celery -A tasks.celery_app.celery_app worker --loglevel=info --concurrency=4 --without-mingle --without-gossip
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - mongo
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A tasks.celery_app.celery_app inspect ping --timeout 5 2>/dev/null | grep -q OK || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app-network
+
+  celery-beat:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: capitan-celery-beat
+    command: celery -A tasks.celery_app.celery_app beat --loglevel=info
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - mongo
+    healthcheck:
+      test: ["CMD-SHELL", "test -f celerybeat-schedule && exit 0 || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app-network
+
+  bot:
+    build:
+      context: ./bot
       dockerfile: Dockerfile
     container_name: capitan-coditos
     restart: unless-stopped
     env_file:
       - .env
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - discbot-network
-    # Uncomment below if you want to persist logs
-    # volumes:
-    #   - ./logs:/app/logs
-
-  db:
-    image: postgres:15
-    container_name: discbot-db
-    restart: unless-stopped
     environment:
-      - POSTGRES_DB=discbot
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - API_BASE_URL=http://api:5000
+    depends_on:
+      - api
     networks:
-      - discbot-network
+      - app-network
+
+  mongo:
+    image: mongo:7
+    container_name: capitan-mongo
+    restart: unless-stopped
+    volumes:
+      - mongodata:/data/db
+    networks:
+      - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d discbot"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
+  redis:
+    image: redis:7-alpine
+    container_name: capitan-redis
+    restart: unless-stopped
+    # Redis is a pure cache — MongoDB is the source of truth.
+    # --save "": disable RDB snapshots entirely; the 1.7 GB dump was causing
+    #   the restart loop (fork for BGSAVE OOM-killed on every write burst).
+    # --maxmemory 1500mb + allkeys-lru: evict any LRU key (including match:*
+    #   and timeline:* which have no TTL) before hitting system limits.
+    command: >
+      redis-server
+      --save ""
+      --appendonly no
+      --maxmemory 1500mb
+      --maxmemory-policy allkeys-lru
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
 volumes:
-  pgdata:
+  mongodata:
